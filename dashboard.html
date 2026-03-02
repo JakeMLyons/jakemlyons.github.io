@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Campaign Dashboard — Text Adventure Engine</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/dashboard.css">
+</head>
+<body>
+<div class="dashboard">
+
+  <!-- Header -->
+  <header class="dash-header">
+    <div>
+      <h1 class="dash-header__title">Text Adventure Engine — Campaign Dashboard</h1>
+      <p class="dash-header__subtitle">Load campaigns, validate them, and launch a game.</p>
+    </div>
+  </header>
+
+  <div class="dash-body">
+
+    <!-- Library panel -->
+    <aside class="dash-library">
+
+      <!-- Load sub-panel toggle -->
+      <div class="dash-library__header">
+        <span class="dash-library__title">Campaign Library</span>
+        <button class="btn btn--small" id="load-campaign-btn">+ Load campaign…</button>
+      </div>
+
+      <!-- Overflow notice -->
+      <div class="overflow-notice" id="overflow-notice">
+        Oldest campaign removed to make room.
+      </div>
+
+      <!-- Load sub-panel -->
+      <div class="load-subpanel" id="load-subpanel">
+        <div class="load-subpanel__drop" id="subpanel-drop-zone">
+          <p class="load-subpanel__label">Drop campaign folder here</p>
+          <div class="load-subpanel__actions">
+            <button class="btn btn--small" id="subpanel-browse-btn">Browse folder…</button>
+            <input type="file" id="subpanel-folder-input" webkitdirectory multiple hidden>
+            <button class="btn btn--ghost btn--small" id="subpanel-zip-btn">Upload .zip…</button>
+            <input type="file" id="subpanel-zip-input" accept=".zip" hidden>
+          </div>
+          <p class="load-subpanel__status" id="subpanel-status"></p>
+          <div class="load-subpanel__error" id="subpanel-error"></div>
+        </div>
+      </div>
+
+      <!-- Campaign card list -->
+      <div class="dash-library__scroll" id="library-scroll">
+        <p class="dash-library__empty">
+          No campaigns loaded. Click "+ Load campaign…" to add one.
+        </p>
+      </div>
+
+    </aside>
+
+    <!-- Detail panel -->
+    <main class="dash-detail" id="detail-panel">
+      <p class="dash-detail__empty">Select a campaign from the library to see details.</p>
+    </main>
+
+  </div><!-- .dash-body -->
+
+</div><!-- .dashboard -->
+
+<!-- Vendor libs -->
+<script src="vendor/js-yaml.min.js"></script>
+<script src="vendor/jszip.min.js"></script>
+
+<!-- Dashboard module -->
+<script type="module" src="js/dashboard.js"></script>
+</body>
+</html>

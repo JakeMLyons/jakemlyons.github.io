@@ -1,9 +1,159 @@
-<html>
-	<head>
-		<link rel="stylesheet" type="text/css" href="index.css">
-	</head>
-	
-	<body>
-		<h1> Placeholder </h1>
-	</body>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Text Adventure Engine</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ── Load screen ──────────────────────────────────────────────────────── -->
+<div id="load-screen">
+  <h1 class="load-screen__title">Text Adventure Engine</h1>
+
+  <p class="load-screen__dashboard-link" id="dashboard-link-load">
+    <a href="dashboard.html">→ Campaign Dashboard</a>
+  </p>
+
+  <div class="drop-zone" id="drop-zone">
+    <p class="drop-zone__label">Drop your campaign folder here</p>
+
+    <div class="drop-zone__actions">
+      <button class="btn" id="browse-folder-btn">Browse folder…</button>
+      <input type="file" id="folder-input" webkitdirectory multiple hidden>
+    </div>
+
+    <p class="drop-zone__zip-label">
+      Can't drop a folder?
+      <button class="btn btn--ghost btn--small" id="upload-zip-btn">Upload a .zip…</button>
+      <input type="file" id="zip-input" accept=".zip" hidden>
+    </p>
+
+    <p class="drop-zone__status" id="drop-zone-status"></p>
+
+    <div class="drop-zone__error" id="drop-zone-error"></div>
+    <div class="drop-zone__warnings" id="drop-zone-warnings"></div>
+  </div>
+</div>
+
+<!-- ── Game screen ──────────────────────────────────────────────────────── -->
+<div id="game-screen">
+
+  <!-- Header -->
+  <header class="game-header">
+    <h1 class="game-header__title" id="game-title">Text Adventure</h1>
+    <nav class="game-header__nav">
+      <a href="dashboard.html" class="game-header__dashboard-link hidden" id="dashboard-link-game">← Dashboard</a>
+      <div class="save-feedback" id="save-feedback"></div>
+      <button class="btn btn--ghost btn--small" id="save-btn">Save</button>
+      <button class="btn btn--ghost btn--small" id="load-btn">Load</button>
+      <button class="btn btn--ghost btn--small" id="restart-btn">Restart</button>
+      <button class="btn btn--ghost btn--small" id="help-btn">Help</button>
+    </nav>
+  </header>
+
+  <!-- Help panel (toggle) -->
+  <div class="help-panel" id="help-panel">
+    <h3>How to play</h3>
+    <ul>
+      <li><strong>Make choices</strong> — click a numbered button to advance the story.</li>
+      <li><strong>Save progress</strong> — click <em>Save</em> to store your game in this browser. Saves persist across sessions.</li>
+      <li><strong>Load a save</strong> — click <em>Load</em> to resume from a previous save, or upload a .json save file.</li>
+      <li><strong>Download save</strong> — use the <em>Download</em> button in the Load panel to back up a save as a file.</li>
+      <li><strong>Inventory</strong> — items you carry appear in the HUD. Click an item name to see its description.</li>
+      <li><strong>Journal</strong> — expand the Journal panel to read notes your character has gathered.</li>
+      <li><strong>Map</strong> — expand the Map panel to see all scenes you have visited.</li>
+      <li><strong>Restart</strong> — start over from the beginning (your saves are preserved).</li>
+    </ul>
+  </div>
+
+  <!-- Restart confirmation -->
+  <div class="restart-confirm" id="restart-confirm">
+    <span>Restart from the beginning? You will lose progress since your last save.</span>
+    <button class="btn btn--danger btn--small" id="restart-yes-btn">Yes, restart</button>
+    <button class="btn btn--ghost btn--small" id="restart-no-btn">Cancel</button>
+  </div>
+
+  <!-- Main content: scene + HUD -->
+  <div class="game-content">
+
+    <!-- Scene panel -->
+    <main class="scene-panel" id="scene-panel">
+      <div class="scene-panel__messages" id="scene-messages"></div>
+      <p class="scene-panel__text" id="scene-text"></p>
+      <div class="scene-panel__choices" id="scene-choices"></div>
+    </main>
+
+    <!-- HUD panel -->
+    <aside class="hud-panel">
+
+      <!-- Inventory -->
+      <div class="hud-section" id="hud-inventory">
+        <div class="hud-section__label">Inventory</div>
+        <div class="hud-section__value">
+          <ul class="inventory-list" id="inventory-list"></ul>
+        </div>
+      </div>
+
+      <!-- Health (hidden when health is null) -->
+      <div class="hud-section" id="hud-health">
+        <div class="hud-section__label">Health</div>
+        <div class="hud-section__value" id="health-value"></div>
+      </div>
+
+      <!-- Journal (collapsible) -->
+      <div class="hud-collapsible" id="hud-journal-container">
+        <button class="hud-collapsible__header" id="journal-toggle" aria-expanded="false">
+          <span class="hud-collapsible__title">
+            Journal
+            <span class="hud-badge" id="journal-badge">0</span>
+          </span>
+          <span class="hud-collapsible__arrow" id="journal-arrow">▼</span>
+        </button>
+        <div class="hud-collapsible__content" id="journal-content">
+          <ol class="journal-list" id="journal-list"></ol>
+        </div>
+      </div>
+
+      <!-- Map (collapsible) -->
+      <div class="hud-collapsible" id="hud-map-container">
+        <button class="hud-collapsible__header" id="map-toggle" aria-expanded="false">
+          <span class="hud-collapsible__title">
+            Map
+            <span class="hud-badge" id="map-badge">0</span>
+          </span>
+          <span class="hud-collapsible__arrow" id="map-arrow">▼</span>
+        </button>
+        <div class="hud-collapsible__content" id="map-content">
+          <ul class="map-list" id="map-list"></ul>
+        </div>
+      </div>
+
+    </aside>
+  </div><!-- .game-content -->
+
+</div><!-- #game-screen -->
+
+<!-- ── Load/Save modal ──────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="load-modal" role="dialog" aria-modal="true" aria-labelledby="load-modal-title">
+  <div class="modal">
+    <div class="modal__header">
+      <h2 class="modal__title" id="load-modal-title">Load Save</h2>
+      <button class="modal__close" id="load-modal-close" aria-label="Close">✕</button>
+    </div>
+    <div class="modal__body" id="load-modal-body">
+      <!-- Populated by ui.js -->
+    </div>
+  </div>
+</div>
+
+<!-- ── Vendor libraries (not ES modules — must be global) ───────────────── -->
+<script src="vendor/js-yaml.min.js"></script>
+<script src="vendor/jszip.min.js"></script>
+
+<!-- ── Application modules ──────────────────────────────────────────────── -->
+<script type="module" src="js/ui.js"></script>
+
+</body>
 </html>
