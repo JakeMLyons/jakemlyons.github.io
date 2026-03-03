@@ -72,18 +72,37 @@
         <ul id="ed-filetree__list" class="ed-filetree__list"></ul>
       </div>
 
-      <!-- Visual mode: scene list -->
+      <!-- Visual mode: three-section nav -->
       <div id="ed-scenelist" class="ed-scenelist hidden">
-        <div class="ed-scenelist__header">
-          <span class="ed-sidebar__label">Scenes</span>
-          <button class="btn btn--ghost btn--small" id="ed-add-scene" title="Add new scene">+</button>
-        </div>
-        <ul id="ed-scenelist__list" class="ed-scenelist__list"></ul>
-        <div class="ed-scenelist__footer">
-          <button class="btn btn--ghost btn--small ed-items-nav-btn" id="ed-items-nav">
-            Items registry
+
+        <!-- Metadata nav -->
+        <div class="ed-nav-section" id="ed-meta-section">
+          <button class="ed-nav-section__hdr" id="ed-meta-nav">
+            <span class="ed-nav-section__label">Metadata</span>
+            <span class="ed-nav-section__chevron" aria-hidden="true"></span>
           </button>
         </div>
+
+        <!-- Items nav -->
+        <div class="ed-nav-section" id="ed-items-section">
+          <button class="ed-nav-section__hdr" id="ed-items-nav">
+            <span class="ed-nav-section__label">Items</span>
+            <span class="ed-nav-section__chevron" aria-hidden="true"></span>
+          </button>
+        </div>
+
+        <!-- Scenes nav -->
+        <div class="ed-nav-section" id="ed-scenes-section">
+          <div class="ed-nav-section__hdr-row">
+            <button class="ed-nav-section__hdr" id="ed-scenes-nav">
+              <span class="ed-nav-section__label">Scenes</span>
+              <span class="ed-nav-section__chevron" aria-hidden="true"></span>
+            </button>
+            <button class="btn btn--ghost btn--small" id="ed-add-scene" title="Add new scene">+</button>
+          </div>
+          <ul id="ed-scenelist__list" class="ed-scenelist__list"></ul>
+        </div>
+
       </div>
 
     </aside>
@@ -229,6 +248,13 @@
           <button class="btn btn--ghost btn--small ed-add-item-btn" id="ed-add-item">
             + Add item
           </button>
+        </section>
+
+        <!-- Scene graph — shown when Scenes nav is clicked -->
+        <section id="ed-scene-graph" class="ed-form-section ed-scene-graph hidden">
+          <div class="ed-scene-graph__wrap">
+            <svg id="ed-scene-graph-svg" class="ed-scene-graph__svg"></svg>
+          </div>
         </section>
 
       </div><!-- #ed-visual-pane -->

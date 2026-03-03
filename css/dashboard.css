@@ -339,6 +339,12 @@ body {
   padding: 0.5rem;
 }
 
+.dash-library__actions {
+  display: flex;
+  gap: calc(var(--ta-spacing) * 0.5);
+  align-items: center;
+}
+
 /* Responsive */
 @media (max-width: 640px) {
   .dash-body {

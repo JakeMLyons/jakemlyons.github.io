@@ -284,20 +284,93 @@
   color: var(--ta-danger);
 }
 
-.ed-scenelist__footer {
-  border-top: 1px solid var(--ta-border);
-  padding: calc(var(--ta-spacing) * 0.5) var(--ta-spacing);
+/* ── Visual mode nav sections ─────────────────────────────────────────────── */
+
+.ed-nav-section {
   flex-shrink: 0;
+  border-bottom: 1px solid var(--ta-border);
 }
 
-.ed-items-nav-btn {
+/* Scenes section expands to fill remaining space */
+#ed-scenes-section {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.ed-nav-section__hdr {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--ta-spacing) * 0.5);
+  padding: calc(var(--ta-spacing) * 0.6) var(--ta-spacing);
   width: 100%;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--ta-text);
   text-align: left;
 }
-
-.ed-items-nav-btn--active {
+.ed-nav-section__hdr:hover {
+  background-color: var(--ta-hover);
+}
+.ed-nav-section__hdr--active,
+.ed-nav-section__hdr--active .ed-nav-section__label {
   color: var(--ta-accent);
-  border-color: var(--ta-accent);
+}
+
+/* Scenes header row: nav button + add button */
+.ed-nav-section__hdr-row {
+  display: flex;
+  align-items: center;
+  padding-right: calc(var(--ta-spacing) * 0.5);
+}
+.ed-nav-section__hdr-row .ed-nav-section__hdr {
+  flex: 1;
+}
+
+.ed-nav-section__label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ta-text-muted);
+}
+
+/* Chevron arrow — static decoration */
+.ed-nav-section__chevron {
+  font-style: normal;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.ed-nav-section__chevron::before { content: '›'; font-size: 1rem; }
+
+/* ── Scene graph ─────────────────────────────────────────────────────────── */
+
+.ed-scene-graph {
+  flex: 1;
+  padding: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 200px;
+}
+
+.ed-scene-graph__wrap {
+  flex: 1;
+  overflow: auto;
+  padding: calc(var(--ta-spacing) * 0.75);
+}
+
+.ed-scene-graph__svg {
+  display: block;
+}
+
+.sg-node {
+  cursor: pointer;
+}
+.sg-node:hover rect {
+  opacity: 0.82;
 }
 
 /* ── Main editor pane ─────────────────────────────────────────────────────── */
