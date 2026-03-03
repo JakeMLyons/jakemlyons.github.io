@@ -483,6 +483,12 @@ function renderDetail(entry) {
   playBtn.addEventListener('click', () => launchCampaign(entry));
   launchDiv.appendChild(playBtn);
 
+  const editBtn = document.createElement('button');
+  editBtn.className = 'btn btn--ghost';
+  editBtn.textContent = '✎ Edit';
+  editBtn.addEventListener('click', () => editCampaign(entry));
+  launchDiv.appendChild(editBtn);
+
   launchSection.appendChild(launchDiv);
   detailPanel.appendChild(launchSection);
 }
@@ -553,6 +559,41 @@ function tryLocalStorageFallback(serialised, alreadyOpenedTab) {
       'Could not transfer campaign data. Please use the upload button on the game page instead.';
     detailPanel.querySelector('.launch-section')?.appendChild(errP);
   }
+}
+
+// ─── Edit ─────────────────────────────────────────────────────────────────────
+
+function editCampaign(entry) {
+  const serialised = JSON.stringify({ campaign: entry.campaign, name: entry.name });
+
+  if (typeof BroadcastChannel !== 'undefined') {
+    const editorTab = window.open('editor.html?edit', '_blank');
+    const ch = new BroadcastChannel('adventure_handoff');
+    let sent = false;
+
+    const timeout = setTimeout(() => {
+      ch.close();
+      if (!sent) tryEditFallback(serialised, editorTab);
+    }, 5000);
+
+    ch.onmessage = (e) => {
+      if (e.data?.type === 'ready') {
+        clearTimeout(timeout);
+        sent = true;
+        ch.postMessage({ type: 'edit', data: entry.campaign, name: entry.name });
+        ch.close();
+      }
+    };
+  } else {
+    tryEditFallback(serialised, null);
+  }
+}
+
+function tryEditFallback(serialised, alreadyOpenedTab) {
+  try {
+    localStorage.setItem('adventure_pending_edit', serialised);
+    if (!alreadyOpenedTab) window.open('editor.html?edit', '_blank');
+  } catch { /* silent */ }
 }
 
 // ─── Entry reading helpers (same as ui.js) ───────────────────────────────────
