@@ -25,6 +25,7 @@ const PACKAGED_CAMPAIGNS_BASE_URL = 'https://jakemlyons.github.io/campaigns/';
 
 // ─── DOM references ───────────────────────────────────────────────────────────
 
+const newCampaignBtn    = document.getElementById('new-campaign-btn');
 const loadCampaignBtn   = document.getElementById('load-campaign-btn');
 const loadSubpanel      = document.getElementById('load-subpanel');
 const subpanelDropZone  = document.getElementById('subpanel-drop-zone');
@@ -41,6 +42,7 @@ const detailPanel       = document.getElementById('detail-panel');
 // ─── Initialisation ───────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
+  newCampaignBtn.addEventListener('click', () => window.open('editor.html?new'));
   wireLoadSubpanel();
   renderLibrary();
   loadPackagedCampaigns();

@@ -59,6 +59,8 @@ const edScenelist    = document.getElementById('ed-scenelist');
 const edScenelistList = document.getElementById('ed-scenelist__list');
 const edAddSceneBtn  = document.getElementById('ed-add-scene');
 const edItemsNav     = document.getElementById('ed-items-nav');
+const edMetaNav      = document.getElementById('ed-meta-nav');
+const edScenesNav    = document.getElementById('ed-scenes-nav');
 
 // Mode toggle
 const edModeCode   = document.getElementById('ed-mode-code');
@@ -75,6 +77,8 @@ const edVisualPane  = document.getElementById('ed-visual-pane');
 const edMetaForm    = document.getElementById('ed-meta-form');
 const edSceneForm   = document.getElementById('ed-scene-form');
 const edItemsForm   = document.getElementById('ed-items-form');
+const edSceneGraph    = document.getElementById('ed-scene-graph');
+const edSceneGraphSvg = document.getElementById('ed-scene-graph-svg');
 
 // Metadata form fields
 const edMetaTitle     = document.getElementById('ed-meta-title');
@@ -165,8 +169,10 @@ function checkEditorHandoff() {
     };
   } else if (url.searchParams.has('edit')) {
     tryLocalStorageHandoff();
+  } else if (url.searchParams.has('new')) {
+    initNewCampaign();
   }
-  // No ?edit → stay on blank state
+  // No ?edit or ?new → stay on blank state
 }
 
 function tryLocalStorageHandoff() {
@@ -682,6 +688,8 @@ function wireVisualPane() {
   });
 
   // Scene list controls
+  edMetaNav.addEventListener('click', showMetadataForm);
+  edScenesNav.addEventListener('click', showScenesView);
   edAddSceneBtn.addEventListener('click', addScene);
   edItemsNav.addEventListener('click', showItemsForm);
 
@@ -771,6 +779,199 @@ function populateStartSelect() {
 
 // ─── Visual mode: scene list ──────────────────────────────────────────────────
 
+function renderSceneGraph() {
+  const NS = 'http://www.w3.org/2000/svg';
+  const scenes  = campaign.scenes ?? {};
+  const startId = campaign.metadata?.start;
+
+  const NODE_W = 140, NODE_H = 46, H_GAP = 70, V_GAP = 18, PAD = 20;
+
+  // ── BFS layout ─────────────────────────────────────────────────────────────
+  const layers     = new Map(); // sceneId → layerIndex
+  const layerGroups = [];       // layerGroups[i] = [sceneId, ...]
+  const visited    = new Set();
+  const queue      = [];
+
+  if (startId && scenes[startId]) {
+    queue.push(startId);
+    layers.set(startId, 0);
+    visited.add(startId);
+  }
+
+  while (queue.length > 0) {
+    const id    = queue.shift();
+    const layer = layers.get(id);
+    if (!layerGroups[layer]) layerGroups[layer] = [];
+    layerGroups[layer].push(id);
+
+    for (const choice of scenes[id]?.choices ?? []) {
+      if (choice.next && scenes[choice.next] && !visited.has(choice.next)) {
+        visited.add(choice.next);
+        layers.set(choice.next, layer + 1);
+        queue.push(choice.next);
+      }
+    }
+  }
+
+  // Unreachable scenes go in a final column
+  const unreachable = Object.keys(scenes).filter(id => !visited.has(id));
+  if (unreachable.length > 0) {
+    layerGroups.push(unreachable);
+    const ux = layerGroups.length - 1;
+    for (const id of unreachable) layers.set(id, ux);
+  }
+
+  // ── Node positions ──────────────────────────────────────────────────────────
+  const nodePos = new Map(); // sceneId → { x, y }
+  for (let li = 0; li < layerGroups.length; li++) {
+    const group = layerGroups[li];
+    for (let ri = 0; ri < group.length; ri++) {
+      nodePos.set(group[ri], {
+        x: li * (NODE_W + H_GAP),
+        y: ri * (NODE_H + V_GAP),
+      });
+    }
+  }
+
+  // ── SVG dimensions ──────────────────────────────────────────────────────────
+  const totalCols = layerGroups.length;
+  const maxRows   = Math.max(0, ...layerGroups.map(g => g.length));
+  const svgW = totalCols * (NODE_W + H_GAP) - H_GAP + PAD * 2;
+  const svgH = maxRows  * (NODE_H + V_GAP) - V_GAP + PAD * 2;
+
+  const svg = edSceneGraphSvg;
+  svg.setAttribute('width',  String(Math.max(svgW, 1)));
+  svg.setAttribute('height', String(Math.max(svgH, 1)));
+  svg.innerHTML = '';
+
+  if (layerGroups.length === 0) return; // nothing to draw
+
+  // ── Arrowhead marker ────────────────────────────────────────────────────────
+  const defs   = document.createElementNS(NS, 'defs');
+  const marker = document.createElementNS(NS, 'marker');
+  marker.setAttribute('id',           'sg-arrow');
+  marker.setAttribute('markerWidth',  '8');
+  marker.setAttribute('markerHeight', '6');
+  marker.setAttribute('refX',         '7');
+  marker.setAttribute('refY',         '3');
+  marker.setAttribute('orient',       'auto');
+  const poly = document.createElementNS(NS, 'polygon');
+  poly.setAttribute('points', '0,0 8,3 0,6');
+  poly.setAttribute('fill',   'var(--ta-text-muted)');
+  marker.appendChild(poly);
+  defs.appendChild(marker);
+  svg.appendChild(defs);
+
+  const edgesG = document.createElementNS(NS, 'g');
+  const nodesG = document.createElementNS(NS, 'g');
+
+  // ── Edges ───────────────────────────────────────────────────────────────────
+  // Deduplicate edges (multiple choices to the same target → one arrow)
+  const drawn = new Set();
+  for (const [fromId, scene] of Object.entries(scenes)) {
+    const from = nodePos.get(fromId);
+    if (!from) continue;
+    for (const choice of scene.choices ?? []) {
+      const edgeKey = `${fromId}→${choice.next}`;
+      if (!choice.next || !nodePos.has(choice.next) || drawn.has(edgeKey)) continue;
+      drawn.add(edgeKey);
+
+      const to = nodePos.get(choice.next);
+      const x1 = from.x + NODE_W + PAD;
+      const y1 = from.y + NODE_H / 2 + PAD;
+      const x2 = to.x + PAD;
+      const y2 = to.y + NODE_H / 2 + PAD;
+
+      // Back-edge: bows rightward so it doesn't cut across nodes
+      const isBack = (to.x <= from.x);
+      const cpx = isBack
+        ? Math.max(x1, x2) + H_GAP * 0.9
+        : (x1 + x2) / 2;
+
+      const path = document.createElementNS(NS, 'path');
+      path.setAttribute('d',           `M ${x1} ${y1} C ${cpx} ${y1}, ${cpx} ${y2}, ${x2} ${y2}`);
+      path.setAttribute('stroke',      'var(--ta-border)');
+      path.setAttribute('stroke-width','1.5');
+      path.setAttribute('fill',        'none');
+      path.setAttribute('marker-end',  'url(#sg-arrow)');
+      edgesG.appendChild(path);
+    }
+  }
+
+  // ── Nodes ───────────────────────────────────────────────────────────────────
+  for (const [sceneId, scene] of Object.entries(scenes)) {
+    const pos = nodePos.get(sceneId);
+    if (!pos) continue;
+
+    const isActive      = sceneId === activeScene;
+    const isEnd         = !!scene.end;
+    const isStart       = sceneId === startId;
+    const isUnreachable = !visited.has(sceneId);
+
+    const g = document.createElementNS(NS, 'g');
+    g.setAttribute('class',     'sg-node');
+    g.setAttribute('transform', `translate(${pos.x + PAD},${pos.y + PAD})`);
+    g.addEventListener('click', () => selectScene(sceneId));
+
+    const rect = document.createElementNS(NS, 'rect');
+    rect.setAttribute('width',        String(NODE_W));
+    rect.setAttribute('height',       String(NODE_H));
+    rect.setAttribute('rx',           '5');
+    rect.setAttribute('stroke-width', isStart && !isActive ? '2' : '1.5');
+
+    if (isActive) {
+      rect.setAttribute('fill',   'var(--ta-accent)');
+      rect.setAttribute('stroke', 'var(--ta-accent)');
+    } else if (isEnd) {
+      rect.setAttribute('fill',   'var(--ta-surface)');
+      rect.setAttribute('stroke', 'var(--ta-danger)');
+    } else if (isUnreachable) {
+      rect.setAttribute('fill',   'var(--ta-surface)');
+      rect.setAttribute('stroke', 'var(--ta-warning)');
+    } else if (isStart) {
+      rect.setAttribute('fill',   'var(--ta-surface)');
+      rect.setAttribute('stroke', 'var(--ta-accent)');
+    } else {
+      rect.setAttribute('fill',   'var(--ta-surface)');
+      rect.setAttribute('stroke', 'var(--ta-border)');
+    }
+    g.appendChild(rect);
+
+    const textFill   = isActive ? 'var(--ta-bg)' : 'var(--ta-text)';
+    const mutedFill  = isActive ? 'var(--ta-bg)' : 'var(--ta-text-muted)';
+    const fontFamily = 'var(--ta-font-ui, system-ui, sans-serif)';
+
+    const idLabel = sceneId.length > 16 ? sceneId.slice(0, 15) + '…' : sceneId;
+    const idText  = document.createElementNS(NS, 'text');
+    idText.setAttribute('x',           '8');
+    idText.setAttribute('y',           '18');
+    idText.setAttribute('fill',        textFill);
+    idText.setAttribute('font-size',   '11');
+    idText.setAttribute('font-weight', '600');
+    idText.setAttribute('font-family', fontFamily);
+    idText.textContent = idLabel;
+    g.appendChild(idText);
+
+    const raw = (scene.title || scene.text || '').replace(/\n/g, ' ');
+    if (raw) {
+      const preview = raw.length > 22 ? raw.slice(0, 21) + '…' : raw;
+      const preText = document.createElementNS(NS, 'text');
+      preText.setAttribute('x',         '8');
+      preText.setAttribute('y',         '33');
+      preText.setAttribute('fill',      mutedFill);
+      preText.setAttribute('font-size', '9');
+      preText.setAttribute('font-family', fontFamily);
+      preText.textContent = preview;
+      g.appendChild(preText);
+    }
+
+    nodesG.appendChild(g);
+  }
+
+  svg.appendChild(edgesG);
+  svg.appendChild(nodesG);
+}
+
 function renderSceneList() {
   edScenelistList.innerHTML = '';
   const startId = campaign.metadata?.start;
@@ -832,21 +1033,42 @@ function selectScene(sceneId) {
   for (const li of edScenelistList.querySelectorAll('.ed-scenelist__item')) {
     li.classList.toggle('ed-scenelist__item--active', li.dataset.sceneId === sceneId);
   }
-  // Deactivate items nav
-  edItemsNav.classList.remove('ed-items-nav-btn--active');
-  // Show scene form
-  edMetaForm.classList.remove('hidden');
+  // Activate Scenes nav, deactivate others
+  edScenesNav.classList.add('ed-nav-section__hdr--active');
+  edItemsNav.classList.remove('ed-nav-section__hdr--active');
+  edMetaNav.classList.remove('ed-nav-section__hdr--active');
+  // Show only scene form
+  edMetaForm.classList.add('hidden');
   edSceneForm.classList.remove('hidden');
   edItemsForm.classList.add('hidden');
+  edSceneGraph.classList.add('hidden');
   renderSceneForm(sceneId);
+}
+
+function showScenesView() {
+  activeScene = null;
+  edScenesNav.classList.add('ed-nav-section__hdr--active');
+  edMetaNav.classList.remove('ed-nav-section__hdr--active');
+  edItemsNav.classList.remove('ed-nav-section__hdr--active');
+  for (const li of edScenelistList.querySelectorAll('.ed-scenelist__item')) {
+    li.classList.remove('ed-scenelist__item--active');
+  }
+  edMetaForm.classList.add('hidden');
+  edSceneForm.classList.add('hidden');
+  edItemsForm.classList.add('hidden');
+  edSceneGraph.classList.remove('hidden');
+  renderSceneGraph();
 }
 
 function showMetadataForm() {
   activeScene = null;
   edSceneForm.classList.add('hidden');
   edItemsForm.classList.add('hidden');
+  edSceneGraph.classList.add('hidden');
   edMetaForm.classList.remove('hidden');
-  edItemsNav.classList.remove('ed-items-nav-btn--active');
+  edScenesNav.classList.remove('ed-nav-section__hdr--active');
+  edItemsNav.classList.remove('ed-nav-section__hdr--active');
+  edMetaNav.classList.add('ed-nav-section__hdr--active');
   for (const li of edScenelistList.querySelectorAll('.ed-scenelist__item')) {
     li.classList.remove('ed-scenelist__item--active');
   }
@@ -1152,12 +1374,15 @@ function moveChoice(sceneId, from, to) {
 
 function showItemsForm() {
   activeScene = null;
-  edItemsNav.classList.add('ed-items-nav-btn--active');
+  edItemsNav.classList.add('ed-nav-section__hdr--active');
+  edScenesNav.classList.remove('ed-nav-section__hdr--active');
+  edMetaNav.classList.remove('ed-nav-section__hdr--active');
   for (const li of edScenelistList.querySelectorAll('.ed-scenelist__item')) {
     li.classList.remove('ed-scenelist__item--active');
   }
-  edMetaForm.classList.remove('hidden');
+  edMetaForm.classList.add('hidden');
   edSceneForm.classList.add('hidden');
+  edSceneGraph.classList.add('hidden');
   edItemsForm.classList.remove('hidden');
   renderItemsView();
 }
