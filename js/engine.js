@@ -19,6 +19,7 @@ import { getAvailableChoices } from './choices.js';
 import {
   applyChoiceHealth,
   applyItemGrants,
+  applyItemRemovals,
   applyNoteGrants,
   applySceneEvents,
 } from './events.js';
@@ -82,6 +83,10 @@ export class GameEngine {
     let result = applyItemGrants(chosen, state);
     state = result.newState;
     messages.push(...result.messages);
+
+    // 1.5 Apply item removals
+    result = applyItemRemovals(chosen, state);
+    state = result.newState;
 
     // 2. Apply note grants
     result = applyNoteGrants(chosen, state);

@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { PlayerState } from './state.js';
 import {
   applyItemGrants,
+  applyItemRemovals,
   applyNoteGrants,
   applyChoiceHealth,
   applySceneEvents,
@@ -68,6 +69,67 @@ describe('applyItemGrants()', () => {
     const { newState, messages } = applyItemGrants({}, state);
     assert.deepEqual(messages, []);
     assert.deepEqual(newState.inventory, []);
+  });
+});
+
+// ─── applyItemRemovals ───────────────────────────────────────────────────────
+
+describe('applyItemRemovals()', () => {
+  it('removes held items', () => {
+    const state = makeState({ inventory: ['lantern', 'key'] });
+    const { newState, messages } = applyItemRemovals(
+      { removes_items: ['lantern'] },
+      state
+    );
+    assert.deepEqual(newState.inventory, ['key']);
+    assert.deepEqual(messages, []);
+  });
+
+  it('removes multiple items at once', () => {
+    const state = makeState({ inventory: ['lantern', 'key', 'map'] });
+    const { newState } = applyItemRemovals(
+      { removes_items: ['lantern', 'map'] },
+      state
+    );
+    assert.deepEqual(newState.inventory, ['key']);
+  });
+
+  it('silently skips items not currently held', () => {
+    const state = makeState({ inventory: ['lantern'] });
+    const { newState, messages } = applyItemRemovals(
+      { removes_items: ['key'] },
+      state
+    );
+    assert.deepEqual(newState.inventory, ['lantern']);
+    assert.deepEqual(messages, []);
+  });
+
+  it('produces no messages', () => {
+    const state = makeState({ inventory: ['lantern'] });
+    const { messages } = applyItemRemovals(
+      { removes_items: ['lantern'] },
+      state
+    );
+    assert.deepEqual(messages, []);
+  });
+
+  it('handles missing removes_items gracefully', () => {
+    const state = makeState({ inventory: ['lantern'] });
+    const { newState, messages } = applyItemRemovals({}, state);
+    assert.deepEqual(newState.inventory, ['lantern']);
+    assert.deepEqual(messages, []);
+  });
+
+  it('does not mutate input state', () => {
+    const state = makeState({ inventory: ['lantern'] });
+    applyItemRemovals({ removes_items: ['lantern'] }, state);
+    assert.deepEqual(state.inventory, ['lantern']);
+  });
+
+  it('returns original state reference when nothing removed', () => {
+    const state = makeState({ inventory: ['lantern'] });
+    const { newState } = applyItemRemovals({ removes_items: ['key'] }, state);
+    assert.equal(newState, state);
   });
 });
 
@@ -218,5 +280,22 @@ describe('applySceneEvents()', () => {
     const state = makeState({ health: 100 });
     const { newState } = applySceneEvents(scene, state);
     assert.equal(newState.health, 90);
+  });
+
+  it('removes items listed in removes_items', () => {
+    const scene = { on_enter: { removes_items: ['lantern'] } };
+    const state = makeState({ inventory: ['lantern', 'key'] });
+    const { newState, messages } = applySceneEvents(scene, state);
+    assert.deepEqual(newState.inventory, ['key']);
+    assert.deepEqual(messages, []);
+  });
+
+  it('processes removes_items after gives_items (grant then consume in same on_enter)', () => {
+    const scene = {
+      on_enter: { gives_items: ['potion'], removes_items: ['potion'] },
+    };
+    const state = makeState();
+    const { newState } = applySceneEvents(scene, state);
+    assert.deepEqual(newState.inventory, []);
   });
 });

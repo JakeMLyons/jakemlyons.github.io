@@ -21,6 +21,7 @@ let library = [];
 let selectedId = null;
 const MAX_LIBRARY = 10;
 const OVERFLOW_FADE_MS = 4000;
+const PACKAGED_CAMPAIGNS_BASE_URL = 'https://jakemlyons.github.io/campaigns/';
 
 // ─── DOM references ───────────────────────────────────────────────────────────
 
@@ -42,7 +43,50 @@ const detailPanel       = document.getElementById('detail-panel');
 document.addEventListener('DOMContentLoaded', () => {
   wireLoadSubpanel();
   renderLibrary();
+  loadPackagedCampaigns();
 });
+
+// ─── Packaged campaign auto-loading ───────────────────────────────────────────
+
+async function loadPackagedCampaigns() {
+  let manifest;
+  try {
+    const res = await fetch(`${PACKAGED_CAMPAIGNS_BASE_URL}manifest.json`);
+    if (!res.ok) return;
+    manifest = await res.json();
+  } catch {
+    return; // network error or no manifest — silent
+  }
+
+  const zipNames = Array.isArray(manifest?.campaigns) ? manifest.campaigns : [];
+  if (zipNames.length === 0) return;
+
+  // Show loading notice while ZIPs are fetched (replaces initial empty state)
+  libraryScroll.innerHTML = '';
+  const loadingEl = document.createElement('p');
+  loadingEl.className = 'dash-library__empty';
+  loadingEl.textContent = 'Loading packaged campaigns…';
+  libraryScroll.appendChild(loadingEl);
+
+  await Promise.all(zipNames.map(async (zipName) => {
+    try {
+      const res = await fetch(`${PACKAGED_CAMPAIGNS_BASE_URL}${zipName}`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const files = await unzipToFiles(await res.arrayBuffer());
+      const name = zipName.replace(/\.zip$/i, '');
+      const campaign = await loadCampaign(files);
+      const validation = validateCampaign(campaign);
+      addToLibrary(name, campaign, validation);
+    } catch (e) {
+      console.warn(`Packaged campaign "${zipName}" failed to load:`, e.message);
+    }
+  }));
+
+  // Always re-render: clears the loading message if all failed, and restores any
+  // campaigns that were manually loaded before auto-loading began.
+  renderLibrary();
+}
+
 
 // ─── Load sub-panel wiring ────────────────────────────────────────────────────
 
@@ -119,22 +163,25 @@ async function handleFileList(fileList, zipName) {
   }
 }
 
+async function unzipToFiles(arrayBuffer) {
+  const zip = await JSZip.loadAsync(arrayBuffer);
+  const files = [];
+  for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
+    if (zipEntry.dir) continue;
+    const entryName = relativePath.split('/').pop();
+    if (!entryName.endsWith('.yaml') && entryName !== 'theme.css') continue;
+    const text = await zipEntry.async('string');
+    files.push({ path: relativePath, text });
+  }
+  return files;
+}
+
 async function handleZip(zipFile) {
   setSubpanelStatus('Extracting ZIP…');
   clearSubpanelError();
   try {
-    const arrayBuffer = await zipFile.arrayBuffer();
-    const zip = await JSZip.loadAsync(arrayBuffer);
-    const files = [];
-    for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
-      if (zipEntry.dir) continue;
-      const name = relativePath.split('/').pop();
-      if (!name.endsWith('.yaml') && name !== 'theme.css') continue;
-      const text = await zipEntry.async('string');
-      files.push({ path: relativePath, text });
-    }
-    const nameFromFile = zipFile.name.replace(/\.zip$/i, '');
-    await processFiles(files, nameFromFile);
+    const files = await unzipToFiles(await zipFile.arrayBuffer());
+    await processFiles(files, zipFile.name.replace(/\.zip$/i, ''));
   } catch (e) {
     showSubpanelError(e.message);
   }

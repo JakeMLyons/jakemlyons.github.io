@@ -155,6 +155,13 @@ export function validateCampaign(campaign) {
   // ── Scene checks ─────────────────────────────────────────────────────────
 
   const allItemNamesUsed = new Set();
+  const allGrantedItems = new Set();
+  const allRemovedItems = new Set();
+
+  // Starting inventory is implicitly "granted" for dead-removal analysis
+  for (const item of metadata.default_player_state?.inventory ?? []) {
+    allGrantedItems.add(item);
+  }
 
   for (const [sceneId, scene] of Object.entries(scenes)) {
     if (typeof scene !== 'object' || scene === null) {
@@ -169,6 +176,14 @@ export function validateCampaign(campaign) {
     if (RESERVED_COMMAND_NAMES.has(sceneId)) {
       err(
         `Scene ID '${sceneId}' conflicts with a reserved command name and may be unreachable via the CLI.`
+      );
+    }
+
+    // requires_item at scene level is a schema violation — the engine only reads
+    // it on choices, so it is silently ignored when placed on a scene object.
+    if (scene.requires_item != null) {
+      warn(
+        `Scene '${sceneId}' has 'requires_item' at scene level — this field is only read on choices and will be silently ignored.`
       );
     }
 
@@ -195,15 +210,29 @@ export function validateCampaign(campaign) {
         err(`${prefix}: 'next' refers to unknown scene: '${nextId}'`);
       }
 
-      // Collect item names for advisory check
+      // Collect item names for advisory checks
       if (choice.requires_item) allItemNamesUsed.add(choice.requires_item);
       for (const item of choice.requires_items ?? []) allItemNamesUsed.add(item);
-      for (const item of choice.gives_items ?? []) allItemNamesUsed.add(item);
+      for (const item of choice.gives_items ?? []) {
+        allItemNamesUsed.add(item);
+        allGrantedItems.add(item);
+      }
+      for (const item of choice.removes_items ?? []) {
+        allItemNamesUsed.add(item);
+        allRemovedItems.add(item);
+      }
     }
 
     // Collect from on_enter too
     const onEnter = scene.on_enter ?? {};
-    for (const item of onEnter.gives_items ?? []) allItemNamesUsed.add(item);
+    for (const item of onEnter.gives_items ?? []) {
+      allItemNamesUsed.add(item);
+      allGrantedItems.add(item);
+    }
+    for (const item of onEnter.removes_items ?? []) {
+      allItemNamesUsed.add(item);
+      allRemovedItems.add(item);
+    }
   }
 
   // ── Reachability check (BFS from start) ──────────────────────────────────
@@ -234,6 +263,26 @@ export function validateCampaign(campaign) {
     if (!(itemName in itemsRegistry)) {
       warn(
         `Advisory: item '${itemName}' is used in the campaign but has no description in the items registry.`
+      );
+    }
+  }
+
+  // ── Advisory: registered items that are never granted ────────────────────
+
+  for (const itemName of Object.keys(itemsRegistry).sort()) {
+    if (!allGrantedItems.has(itemName)) {
+      warn(
+        `Advisory: registered item '${itemName}' is never granted by any gives_items — dead registry entry.`
+      );
+    }
+  }
+
+  // ── Advisory: removes_items entries that are never granted ───────────────
+
+  for (const itemName of [...allRemovedItems].sort()) {
+    if (!allGrantedItems.has(itemName)) {
+      warn(
+        `Advisory: item '${itemName}' appears in removes_items but is never granted anywhere — removal is always a no-op.`
       );
     }
   }
