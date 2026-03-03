@@ -12,7 +12,7 @@
  */
 
 import { GameEngine } from './engine.js';
-import { loadCampaign, validateCampaign } from './campaign.js';
+import { validateCampaign } from './campaign.js';
 import {
   saveGame,
   listSaves,
@@ -38,17 +38,7 @@ let stepping = false;
 
 // ─── DOM references ───────────────────────────────────────────────────────────
 
-const loadScreen      = document.getElementById('load-screen');
 const gameScreen      = document.getElementById('game-screen');
-const dropZone        = document.getElementById('drop-zone');
-const dropZoneStatus  = document.getElementById('drop-zone-status');
-const dropZoneError   = document.getElementById('drop-zone-error');
-const dropZoneWarnings = document.getElementById('drop-zone-warnings');
-const folderInput     = document.getElementById('folder-input');
-const zipInput        = document.getElementById('zip-input');
-const browseFolderBtn = document.getElementById('browse-folder-btn');
-const uploadZipBtn    = document.getElementById('upload-zip-btn');
-const dashboardLinkLoad = document.getElementById('dashboard-link-load');
 
 const gameTitle       = document.getElementById('game-title');
 const dashboardLinkGame = document.getElementById('dashboard-link-game');
@@ -89,7 +79,6 @@ const loadModalClose  = document.getElementById('load-modal-close');
 // ─── Initialisation ───────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
-  wireDragDrop();
   wireButtons();
   wireCollapsibles();
   checkDashboardHandoff();
@@ -117,7 +106,6 @@ function checkDashboardHandoff() {
         ch.close();
         launchedFromDashboard = true;
         dashboardLinkGame.classList.remove('hidden');
-        dashboardLinkLoad.classList.add('hidden');
         receiveCampaignData(e.data.data, e.data.name);
       }
     };
@@ -129,7 +117,10 @@ function checkDashboardHandoff() {
 
 function tryLocalStorageHandoff() {
   const raw = localStorage.getItem('adventure_pending_campaign');
-  if (!raw) return;
+  if (!raw) {
+    window.location.replace('dashboard.html');
+    return;
+  }
 
   localStorage.removeItem('adventure_pending_campaign');
   let data;
@@ -139,7 +130,6 @@ function tryLocalStorageHandoff() {
 
   launchedFromDashboard = true;
   dashboardLinkGame.classList.remove('hidden');
-  dashboardLinkLoad.classList.add('hidden');
   receiveCampaignData(data.campaign, data.name);
 }
 
@@ -153,214 +143,11 @@ async function receiveCampaignData(data, name) {
   const warnings = errors.filter((r) => r.level === 'warning');
 
   if (hardErrors.length > 0) {
-    showLoadError(
-      'Campaign has validation errors:\n' +
-        hardErrors.map((r) => '• ' + r.message).join('\n')
-    );
+    alert('Campaign has validation errors:\n' + hardErrors.map((r) => '• ' + r.message).join('\n'));
+    window.location.replace('dashboard.html');
     return;
   }
 
-  if (warnings.length > 0) {
-    showLoadWarnings(warnings.map((r) => '• ' + r.message).join('\n'));
-  }
-
-  startNewGame();
-}
-
-// ─── Drag-and-drop + file input wiring ───────────────────────────────────────
-
-function wireDragDrop() {
-  dropZone.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    dropZone.classList.add('drop-zone--dragover');
-  });
-
-  dropZone.addEventListener('dragleave', () => {
-    dropZone.classList.remove('drop-zone--dragover');
-  });
-
-  dropZone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    dropZone.classList.remove('drop-zone--dragover');
-    const items = e.dataTransfer?.items;
-    if (!items) return;
-
-    // Collect FileSystemEntry objects for recursive traversal
-    const entries = [];
-    for (const item of items) {
-      if (item.kind === 'file') {
-        const entry = item.webkitGetAsEntry?.();
-        if (entry) entries.push(entry);
-      }
-    }
-    if (entries.length > 0) {
-      handleEntriesDrop(entries);
-    }
-  });
-
-  browseFolderBtn.addEventListener('click', () => folderInput.click());
-  folderInput.addEventListener('change', () => {
-    if (folderInput.files.length > 0) {
-      handleFileList(folderInput.files, null);
-    }
-  });
-
-  uploadZipBtn.addEventListener('click', () => zipInput.click());
-  zipInput.addEventListener('change', () => {
-    if (zipInput.files[0]) handleZip(zipInput.files[0]);
-  });
-}
-
-async function handleEntriesDrop(entries) {
-  setStatus('Analysing campaign…');
-  clearError();
-
-  try {
-    const files = await readEntries(entries);
-    await processFiles(files, null);
-  } catch (e) {
-    showLoadError(e.message);
-  }
-}
-
-/**
- * Recursively read FileSystemEntry objects into { path, text } objects.
- */
-async function readEntries(entries) {
-  const results = [];
-
-  async function walk(entry, basePath) {
-    if (entry.isFile) {
-      if (!entry.name.endsWith('.yaml') && entry.name !== 'theme.css') return;
-      const file = await entryToFile(entry);
-      const text = await file.text();
-      results.push({ path: basePath + entry.name, text });
-    } else if (entry.isDirectory) {
-      const reader = entry.createReader();
-      const children = await readAllEntries(reader);
-      for (const child of children) {
-        await walk(child, basePath + entry.name + '/');
-      }
-    }
-  }
-
-  // The top-level entries may be a directory (the campaign folder) or files
-  for (const entry of entries) {
-    if (entry.isDirectory) {
-      const reader = entry.createReader();
-      const children = await readAllEntries(reader);
-      for (const child of children) {
-        await walk(child, entry.name + '/');
-      }
-    } else {
-      await walk(entry, '');
-    }
-  }
-
-  return results;
-}
-
-function entryToFile(fileEntry) {
-  return new Promise((resolve, reject) => fileEntry.file(resolve, reject));
-}
-
-function readAllEntries(reader) {
-  return new Promise((resolve, reject) => {
-    let all = [];
-    function read() {
-      reader.readEntries((entries) => {
-        if (entries.length === 0) return resolve(all);
-        all = all.concat(entries);
-        read();
-      }, reject);
-    }
-    read();
-  });
-}
-
-async function handleFileList(fileList, zipName) {
-  setStatus('Analysing campaign…');
-  clearError();
-
-  try {
-    const files = [];
-    for (const file of fileList) {
-      if (!file.name.endsWith('.yaml') && file.name !== 'theme.css') continue;
-      const text = await file.text();
-      // webkitRelativePath gives "FolderName/file.yaml"
-      files.push({ path: file.webkitRelativePath || file.name, text });
-    }
-    await processFiles(files, zipName);
-  } catch (e) {
-    showLoadError(e.message);
-  }
-}
-
-async function handleZip(zipFile) {
-  setStatus('Extracting ZIP…');
-  clearError();
-
-  try {
-    const arrayBuffer = await zipFile.arrayBuffer();
-    const zip = await JSZip.loadAsync(arrayBuffer);
-    const files = [];
-
-    for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
-      if (zipEntry.dir) continue;
-      const name = relativePath.split('/').pop();
-      if (!name.endsWith('.yaml') && name !== 'theme.css') continue;
-      const text = await zipEntry.async('string');
-      files.push({ path: relativePath, text });
-    }
-
-    // Campaign name from ZIP filename (strip .zip extension)
-    const nameFromFile = zipFile.name.replace(/\.zip$/i, '');
-    await processFiles(files, nameFromFile);
-  } catch (e) {
-    showLoadError(e.message);
-  }
-}
-
-async function processFiles(files, zipName) {
-  try {
-    campaign = await loadCampaign(files);
-  } catch (e) {
-    showLoadError(e.message);
-    return;
-  }
-
-  // Derive campaign name from metadata title or folder/ZIP name
-  if (zipName) {
-    campaignName = zipName;
-  } else {
-    // Extract root folder name from paths
-    const firstPath = files[0]?.path ?? '';
-    const parts = firstPath.split('/');
-    campaignName = parts.length > 1 ? parts[0] : (campaign.metadata?.title ?? 'Campaign');
-  }
-
-  // Validate
-  const results = validateCampaign(campaign);
-  const hardErrors = results.filter((r) => r.level === 'error');
-  const warnings = results.filter((r) => r.level === 'warning');
-
-  if (hardErrors.length > 0) {
-    showLoadError(
-      'Campaign has validation errors:\n' +
-        hardErrors.map((r) => '• ' + r.message).join('\n')
-    );
-    return;
-  }
-
-  if (warnings.length > 0) {
-    showLoadWarnings(warnings.map((r) => '• ' + r.message).join('\n'));
-  }
-
-  // Inject theme.css if present
-  const themeFile = files.find((f) => f.path.endsWith('theme.css'));
-  applyTheme(themeFile?.text ?? null);
-
-  setStatus('');
   startNewGame();
 }
 
@@ -383,7 +170,6 @@ function startNewGame() {
 }
 
 function transitionToGame() {
-  loadScreen.style.display = 'none';
   gameScreen.classList.add('active');
 }
 
@@ -884,28 +670,4 @@ function applyTheme(cssText) {
   document.head.appendChild(style);
 }
 
-// ─── Drop zone feedback ───────────────────────────────────────────────────────
 
-function setStatus(text) {
-  dropZoneStatus.textContent = text;
-}
-
-function clearError() {
-  dropZoneError.textContent = '';
-  dropZoneError.classList.remove('drop-zone__error--visible');
-  dropZoneWarnings.textContent = '';
-  dropZoneWarnings.classList.remove('drop-zone__warnings--visible');
-}
-
-function showLoadError(msg) {
-  setStatus('');
-  dropZoneError.textContent = msg;
-  dropZoneError.classList.add('drop-zone__error--visible');
-  // Remove any theme that was partially applied
-  applyTheme(null);
-}
-
-function showLoadWarnings(msg) {
-  dropZoneWarnings.textContent = msg;
-  dropZoneWarnings.classList.add('drop-zone__warnings--visible');
-}

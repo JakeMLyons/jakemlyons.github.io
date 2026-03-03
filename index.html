@@ -8,34 +8,6 @@
 </head>
 <body>
 
-<!-- ── Load screen ──────────────────────────────────────────────────────── -->
-<div id="load-screen">
-  <h1 class="load-screen__title">Text Adventure Engine</h1>
-
-  <p class="load-screen__dashboard-link" id="dashboard-link-load">
-    <a href="dashboard.html">→ Campaign Dashboard</a>
-  </p>
-
-  <div class="drop-zone" id="drop-zone">
-    <p class="drop-zone__label">Drop your campaign folder here</p>
-
-    <div class="drop-zone__actions">
-      <button class="btn" id="browse-folder-btn">Browse folder…</button>
-      <input type="file" id="folder-input" webkitdirectory multiple hidden>
-    </div>
-
-    <p class="drop-zone__zip-label">
-      Can't drop a folder?
-      <button class="btn btn--ghost btn--small" id="upload-zip-btn">Upload a .zip…</button>
-      <input type="file" id="zip-input" accept=".zip" hidden>
-    </p>
-
-    <p class="drop-zone__status" id="drop-zone-status"></p>
-
-    <div class="drop-zone__error" id="drop-zone-error"></div>
-    <div class="drop-zone__warnings" id="drop-zone-warnings"></div>
-  </div>
-</div>
 
 <!-- ── Game screen ──────────────────────────────────────────────────────── -->
 <div id="game-screen">
