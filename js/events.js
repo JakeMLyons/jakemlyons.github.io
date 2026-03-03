@@ -34,6 +34,24 @@ export function applyItemGrants(choice, state) {
 }
 
 /**
+ * Remove any items consumed by a choice or on_enter block from inventory.
+ * Silently skips items not currently held.
+ *
+ * @param {object} data - choice or on_enter block
+ * @param {PlayerState} state
+ * @returns {{ newState: PlayerState, messages: string[] }}
+ */
+export function applyItemRemovals(data, state) {
+  const toRemove = data.removes_items ?? [];
+  const held = toRemove.filter((item) => state.inventory.includes(item));
+  if (held.length === 0) return { newState: state, messages: [] };
+
+  const newState = state.copy();
+  newState.inventory = newState.inventory.filter((item) => !held.includes(item));
+  return { newState, messages: [] };
+}
+
+/**
  * Add any journal notes granted by a choice or on_enter block.
  * Duplicate notes (exact string match) are silently skipped.
  *
@@ -87,11 +105,12 @@ export function applyChoiceHealth(choice, state) {
  * Process the on_enter block for a scene.
  *
  * Fires before scene text is displayed. Supported on_enter keys:
- *   message:     string     — displayed to the player (first in output order)
- *   gives_items: string[]   — items added automatically
- *   gives_notes: string[]   — journal notes added automatically
- *   damage:      number     — subtracted from health
- *   heal:        number     — added to health
+ *   message:      string     — displayed to the player (first in output order)
+ *   gives_items:  string[]   — items added automatically
+ *   removes_items: string[]  — items consumed automatically (silent, skips missing)
+ *   gives_notes:  string[]   — journal notes added automatically
+ *   damage:       number     — subtracted from health
+ *   heal:         number     — added to health
  *
  * Health effects are silently ignored when state.health === null.
  *
@@ -118,6 +137,10 @@ export function applySceneEvents(scene, state) {
     newState.inventory.push(...newItems);
     messages.push(`You found: ${newItems.join(', ')}`);
   }
+
+  // Auto-remove consumed items
+  const removeResult = applyItemRemovals(onEnter, newState);
+  newState = removeResult.newState;
 
   // Auto-grant notes
   const noteResult = applyNoteGrants(onEnter, newState);
