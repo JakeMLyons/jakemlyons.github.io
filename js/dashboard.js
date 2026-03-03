@@ -42,7 +42,7 @@ const detailPanel       = document.getElementById('detail-panel');
 // ─── Initialisation ───────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
-  newCampaignBtn.addEventListener('click', () => window.open('editor.html?new'));
+  newCampaignBtn.addEventListener('click', () => window.open('editor.html?new', '_blank'));
   wireLoadSubpanel();
   renderLibrary();
   loadPackagedCampaigns();
