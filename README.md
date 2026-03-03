@@ -1,4 +1,3 @@
-
 # Text Adventure Engine
 
 A browser-based text adventure engine. Play interactive branching stories, build your own campaigns, and embed them anywhere. No install required.
@@ -91,7 +90,7 @@ Open **editor.html** to create or edit campaigns. Two modes are available, switc
 
 **Code mode** — Write and edit raw YAML directly. A file-tree sidebar lets you switch between files in multi-file campaigns. Line numbers are shown alongside the editor. Good for experienced authors who prefer full control.
 
-**Visual mode** — Edit metadata, scenes, and item descriptions using forms. No YAML knowledge required. A collapsible sidebar lists all scenes so you can jump between them.
+**Visual mode** — Edit metadata, scenes, and item descriptions using forms. No YAML knowledge required. The sidebar has three sections — **Metadata**, **Items**, and **Scenes** — each opening the relevant form. Clicking **Scenes** shows a flow diagram of how all scenes connect; click any node to open that scene's editor.
 
 Both modes work on the same in-memory campaign. Switching modes converts the data between representations automatically.
 
