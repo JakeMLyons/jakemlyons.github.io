@@ -22,6 +22,7 @@ let activeScene = null;     // selected scene ID in visual editor
 let mode = 'code';          // 'code' | 'visual'
 let codeEdited = false;     // user has typed in Code mode this session
 let warningAcknowledged = false; // round-trip warning dialog dismissed
+let isDirty = false;        // unsaved changes since last ZIP export or campaign load
 let sceneFileMap = new Map();    // sceneId → filename (for validation navigation)
 let pendingValidation = [];      // last validateCampaign() results
 
@@ -142,6 +143,7 @@ document.addEventListener('DOMContentLoaded', () => {
   wireVisualPane();
   wireValidationPanel();
   wireModals();
+  wireResizer();
   checkEditorHandoff();
 });
 
@@ -150,24 +152,7 @@ document.addEventListener('DOMContentLoaded', () => {
 function checkEditorHandoff() {
   const url = new URL(window.location.href);
 
-  if (url.searchParams.has('edit') && typeof BroadcastChannel !== 'undefined') {
-    showLoading();
-    const ch = new BroadcastChannel('adventure_handoff');
-    ch.postMessage({ type: 'ready' });
-
-    const timeout = setTimeout(() => {
-      ch.close();
-      tryLocalStorageHandoff();
-    }, 300);
-
-    ch.onmessage = (e) => {
-      if (e.data?.type === 'edit') {
-        clearTimeout(timeout);
-        ch.close();
-        receiveCampaignData(e.data.data, e.data.name);
-      }
-    };
-  } else if (url.searchParams.has('edit')) {
+  if (url.searchParams.has('edit')) {
     tryLocalStorageHandoff();
   } else if (url.searchParams.has('new')) {
     initNewCampaign();
@@ -223,7 +208,7 @@ function receiveCampaignData(campaignObj, name) {
   mode = 'code';
   buildSceneFileMap();
   showShell();
-  updateTitle();
+  clearDirty();
   activateCodeMode(/* selectFirst */ true);
   scheduleValidation();
 }
@@ -254,7 +239,7 @@ async function loadFromFiles(files) {
   mode = 'code';
   buildSceneFileMap();
   showShell();
-  updateTitle();
+  clearDirty();
   activateCodeMode(/* selectFirst */ true);
   scheduleValidation();
 }
@@ -294,7 +279,7 @@ function initNewCampaign() {
   mode = 'code';
   buildSceneFileMap();
   showShell();
-  updateTitle();
+  clearDirty();
   activateCodeMode(/* selectFirst */ true, /* selectScenes */ true);
   scheduleValidation();
 }
@@ -380,6 +365,39 @@ function showBlankError(msg) {
 
 // ─── Top bar wiring ───────────────────────────────────────────────────────────
 
+function wireResizer() {
+  const resizer = document.getElementById('ed-resizer');
+  const edBody  = document.querySelector('.ed-body');
+  if (!resizer || !edBody) return;
+
+  // Restore saved width
+  const saved = localStorage.getItem('editor_sidebar_width');
+  if (saved) edBody.style.setProperty('--sidebar-width', `${saved}px`);
+
+  resizer.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    resizer.classList.add('ed-resizer--dragging');
+    const startX     = e.clientX;
+    const startWidth = edSidebar.getBoundingClientRect().width;
+
+    function onMove(e) {
+      const newWidth = Math.max(120, Math.min(400, startWidth + e.clientX - startX));
+      edBody.style.setProperty('--sidebar-width', `${newWidth}px`);
+    }
+
+    function onUp() {
+      resizer.classList.remove('ed-resizer--dragging');
+      const finalWidth = Math.round(edSidebar.getBoundingClientRect().width);
+      try { localStorage.setItem('editor_sidebar_width', String(finalWidth)); } catch { /* silent */ }
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    }
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+}
+
 function wireTopbar() {
   edValidateBtn.addEventListener('click', () => {
     runValidation();
@@ -402,8 +420,19 @@ function wireTopbar() {
 
 function updateTitle() {
   const title = campaign?.metadata?.title || 'Untitled Campaign';
-  edTitle.textContent = title;
+  edTitle.textContent = isDirty ? `· ${title}` : title;
   document.title = `${title} — Campaign Editor`;
+}
+
+function markDirty() {
+  if (isDirty) return;
+  isDirty = true;
+  updateTitle();
+}
+
+function clearDirty() {
+  isDirty = false;
+  updateTitle();
 }
 
 // ─── Mode toggle wiring ───────────────────────────────────────────────────────
@@ -527,6 +556,7 @@ const onTextareaInput = debounce(() => {
   const text = edTextarea.value;
   fileMap.set(activeFile, text);
   codeEdited = true;
+  markDirty();
   checkParseError(text);
   buildSceneFileMap();
   scheduleValidation();
@@ -649,6 +679,10 @@ function buildSceneFileMap() {
 // ─── Visual mode wiring ───────────────────────────────────────────────────────
 
 function wireVisualPane() {
+  // Mark dirty on any input/change anywhere in the visual pane
+  edVisualPane.addEventListener('input', markDirty);
+  edVisualPane.addEventListener('change', markDirty);
+
   // Metadata fields
   edMetaTitle.addEventListener('input', () => {
     campaign.metadata.title = edMetaTitle.value;
@@ -702,8 +736,6 @@ function wireVisualPane() {
   edSceneText.addEventListener('input', () => {
     if (!activeScene) return;
     campaign.scenes[activeScene].text = edSceneText.value;
-    // Update preview in scene list
-    updateSceneListPreview(activeScene);
     scheduleValidation();
   });
   edSceneTerminal.addEventListener('change', () => {
@@ -1011,21 +1043,12 @@ function buildSceneListItem(sceneId, sceneData, isStart) {
 
   li.appendChild(row);
 
-  // Preview text
-  const preview = document.createElement('div');
-  preview.className = 'ed-scenelist__preview';
-  preview.id = `scene-preview-${sceneId}`;
-  preview.textContent = truncate(sceneData.text ?? '', 40);
-  li.appendChild(preview);
+  if (sceneData.text) li.title = sceneData.text.slice(0, 200) + (sceneData.text.length > 200 ? '…' : '');
 
   li.addEventListener('click', () => selectScene(sceneId));
   return li;
 }
 
-function updateSceneListPreview(sceneId) {
-  const el = document.getElementById(`scene-preview-${sceneId}`);
-  if (el) el.textContent = truncate(campaign.scenes[sceneId]?.text ?? '', 40);
-}
 
 function selectScene(sceneId) {
   activeScene = sceneId;
@@ -1184,15 +1207,58 @@ function buildChoiceCard(sceneId, index) {
   const choice = campaign.scenes[sceneId].choices[index];
   const card = document.createElement('div');
   card.className = 'ed-choice-card';
+  card.draggable = true;
+  card.dataset.choiceIndex = String(index);
 
-  // Header row (toggle, reorder, delete)
+  // Drag-and-drop handlers
+  card.addEventListener('dragstart', (e) => {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(index));
+    requestAnimationFrame(() => card.classList.add('ed-choice-card--dragging'));
+  });
+  card.addEventListener('dragend', () => {
+    card.classList.remove('ed-choice-card--dragging');
+    for (const el of edChoicesList.querySelectorAll('.ed-choice-card--drag-over')) {
+      el.classList.remove('ed-choice-card--drag-over');
+    }
+  });
+  card.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    card.classList.add('ed-choice-card--drag-over');
+  });
+  card.addEventListener('dragleave', (e) => {
+    if (!card.contains(e.relatedTarget)) {
+      card.classList.remove('ed-choice-card--drag-over');
+    }
+  });
+  card.addEventListener('drop', (e) => {
+    e.preventDefault();
+    card.classList.remove('ed-choice-card--drag-over');
+    const fromIndex = parseInt(e.dataTransfer.getData('text/plain'), 10);
+    const toIndex   = parseInt(card.dataset.choiceIndex, 10);
+    if (fromIndex === toIndex || isNaN(fromIndex) || isNaN(toIndex)) return;
+    moveChoice(sceneId, fromIndex, toIndex);
+  });
+
+  // Header row (drag handle, toggle, reorder, delete)
   const header = document.createElement('div');
   header.className = 'ed-choice-card__header';
+
+  const dragHandle = document.createElement('span');
+  dragHandle.className = 'ed-choice-card__drag-handle';
+  dragHandle.textContent = '⠿';
+  dragHandle.title = 'Drag to reorder';
+  dragHandle.setAttribute('aria-hidden', 'true');
 
   const toggle = document.createElement('button');
   toggle.className = 'ed-choice-card__btn';
   toggle.textContent = '▼';
   toggle.title = 'Toggle';
+
+  const numSpan = document.createElement('span');
+  numSpan.className = 'ed-choice-card__num';
+  numSpan.textContent = `${index + 1}.`;
 
   const labelSpan = document.createElement('span');
   labelSpan.className = 'ed-choice-card__label' + (!choice.label ? ' ed-choice-card__label--empty' : '');
@@ -1226,11 +1292,14 @@ function buildChoiceCard(sceneId, index) {
     e.stopPropagation();
     if (!confirm('Delete this choice?')) return;
     campaign.scenes[sceneId].choices.splice(index, 1);
+    markDirty();
     renderChoicesList(sceneId);
     scheduleValidation();
   });
 
+  header.appendChild(dragHandle);
   header.appendChild(toggle);
+  header.appendChild(numSpan);
   header.appendChild(labelSpan);
   header.appendChild(upBtn);
   header.appendChild(downBtn);
@@ -1367,6 +1436,7 @@ function moveChoice(sceneId, from, to) {
   if (to < 0 || to >= choices.length) return;
   const [item] = choices.splice(from, 1);
   choices.splice(to, 0, item);
+  markDirty();
   renderChoicesList(sceneId);
 }
 
@@ -1606,6 +1676,7 @@ async function downloadZip() {
   document.body.appendChild(a);
   a.click();
   setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000);
+  clearDirty();
 }
 
 function sanitiseZipName(title) {
@@ -1626,31 +1697,10 @@ async function playCampaign() {
   const name       = c?.metadata?.title ?? 'Campaign';
   const serialised = JSON.stringify({ campaign: c, name });
 
-  if (typeof BroadcastChannel !== 'undefined') {
-    const gameTab = window.open('index.html?handoff', '_blank');
-    const ch = new BroadcastChannel('adventure_handoff');
-    let handedOff = false;
-    const timeout = setTimeout(() => {
-      ch.close();
-      if (!handedOff) {
-        try { localStorage.setItem('adventure_pending_campaign', serialised); }
-        catch { /* silent */ }
-      }
-    }, 5000);
-    ch.onmessage = (e) => {
-      if (e.data?.type === 'ready') {
-        clearTimeout(timeout);
-        handedOff = true;
-        ch.postMessage({ type: 'campaign', data: c, name });
-        ch.close();
-      }
-    };
-  } else {
-    try {
-      localStorage.setItem('adventure_pending_campaign', serialised);
-      window.open('index.html', '_blank');
-    } catch { /* silent */ }
-  }
+  try {
+    localStorage.setItem('adventure_pending_campaign', serialised);
+    window.location.href = 'index.html';
+  } catch { /* silent */ }
 }
 
 // ─── Rename modal ─────────────────────────────────────────────────────────────

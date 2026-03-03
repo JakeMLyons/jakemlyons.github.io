@@ -565,6 +565,27 @@ body {
   100% { transform: scale(1); }
 }
 
+@keyframes health-damage {
+  0%   { background-color: transparent; }
+  20%  { background-color: rgba(220, 50, 50, 0.35); }
+  100% { background-color: transparent; }
+}
+
+@keyframes health-heal {
+  0%   { background-color: transparent; }
+  20%  { background-color: rgba(50, 180, 80, 0.35); }
+  100% { background-color: transparent; }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .hud-health--damage {
+    animation: health-damage 700ms ease-out;
+  }
+  .hud-health--heal {
+    animation: health-heal 700ms ease-out;
+  }
+}
+
 .hud-collapsible__arrow {
   font-size: 0.7rem;
   color: var(--ta-text-muted);

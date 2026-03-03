@@ -42,7 +42,7 @@ const detailPanel       = document.getElementById('detail-panel');
 // ─── Initialisation ───────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
-  newCampaignBtn.addEventListener('click', () => window.open('editor.html?new', '_blank'));
+  newCampaignBtn.addEventListener('click', () => { window.location.href = 'editor.html?new'; });
   wireLoadSubpanel();
   renderLibrary();
   loadPackagedCampaigns();
@@ -522,39 +522,10 @@ function addGridRow(grid, label, value) {
 
 function launchCampaign(entry) {
   const serialised = JSON.stringify({ campaign: entry.campaign, name: entry.name });
-
-  if (typeof BroadcastChannel !== 'undefined') {
-    // Open game in new tab, then hand off via BroadcastChannel
-    const gameTab = window.open('index.html?handoff', '_blank');
-    const ch = new BroadcastChannel('adventure_handoff');
-    let handedOff = false;
-
-    const timeout = setTimeout(() => {
-      ch.close();
-      if (!handedOff) tryLocalStorageFallback(serialised, gameTab);
-    }, 5000);
-
-    ch.onmessage = (e) => {
-      if (e.data?.type === 'ready') {
-        clearTimeout(timeout);
-        handedOff = true;
-        ch.postMessage({ type: 'campaign', data: entry.campaign, name: entry.name });
-        ch.close();
-      }
-    };
-  } else {
-    tryLocalStorageFallback(serialised, null);
-  }
-}
-
-function tryLocalStorageFallback(serialised, alreadyOpenedTab) {
   try {
     localStorage.setItem('adventure_pending_campaign', serialised);
-    if (!alreadyOpenedTab) {
-      window.open('index.html', '_blank');
-    }
+    window.location.href = 'index.html';
   } catch {
-    // localStorage write failed — show inline error in detail panel
     const errP = document.createElement('p');
     errP.style.cssText = 'font-size:0.82rem;color:var(--ta-danger);margin-top:0.5rem;';
     errP.textContent =
@@ -567,34 +538,9 @@ function tryLocalStorageFallback(serialised, alreadyOpenedTab) {
 
 function editCampaign(entry) {
   const serialised = JSON.stringify({ campaign: entry.campaign, name: entry.name });
-
-  if (typeof BroadcastChannel !== 'undefined') {
-    const editorTab = window.open('editor.html?edit', '_blank');
-    const ch = new BroadcastChannel('adventure_handoff');
-    let sent = false;
-
-    const timeout = setTimeout(() => {
-      ch.close();
-      if (!sent) tryEditFallback(serialised, editorTab);
-    }, 5000);
-
-    ch.onmessage = (e) => {
-      if (e.data?.type === 'ready') {
-        clearTimeout(timeout);
-        sent = true;
-        ch.postMessage({ type: 'edit', data: entry.campaign, name: entry.name });
-        ch.close();
-      }
-    };
-  } else {
-    tryEditFallback(serialised, null);
-  }
-}
-
-function tryEditFallback(serialised, alreadyOpenedTab) {
   try {
     localStorage.setItem('adventure_pending_edit', serialised);
-    if (!alreadyOpenedTab) window.open('editor.html?edit', '_blank');
+    window.location.href = 'editor.html?edit';
   } catch { /* silent */ }
 }
 

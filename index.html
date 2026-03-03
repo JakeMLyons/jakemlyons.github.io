@@ -48,7 +48,7 @@
       <li><strong>Download save</strong> — use the <em>Download</em> button in the Load panel to back up a save as a file.</li>
       <li><strong>Inventory</strong> — items you carry appear in the HUD. Click an item name to see its description.</li>
       <li><strong>Journal</strong> — expand the Journal panel to read notes your character has gathered.</li>
-      <li><strong>Map</strong> — expand the Map panel to see all scenes you have visited.</li>
+      <li><strong>History</strong> — expand the History panel to see all scenes you have visited.</li>
       <li><strong>Restart</strong> — start over from the beginning (your saves are preserved).</li>
     </ul>
   </div>
@@ -87,6 +87,12 @@
         <div class="hud-section__value" id="health-value"></div>
       </div>
 
+      <!-- Armor (hidden when armor is 0) -->
+      <div class="hud-section hidden" id="hud-armor">
+        <div class="hud-section__label">Armor</div>
+        <div class="hud-section__value" id="armor-value"></div>
+      </div>
+
       <!-- Journal (collapsible) -->
       <div class="hud-collapsible" id="hud-journal-container">
         <button class="hud-collapsible__header" id="journal-toggle" aria-expanded="false">
@@ -101,11 +107,11 @@
         </div>
       </div>
 
-      <!-- Map (collapsible) -->
+      <!-- History (collapsible) -->
       <div class="hud-collapsible" id="hud-map-container">
         <button class="hud-collapsible__header" id="map-toggle" aria-expanded="false">
           <span class="hud-collapsible__title">
-            Map
+            History
             <span class="hud-badge" id="map-badge">0</span>
           </span>
           <span class="hud-collapsible__arrow" id="map-arrow">▼</span>
