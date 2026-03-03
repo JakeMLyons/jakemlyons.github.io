@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Campaign Editor — Text Adventure Engine</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/editor.css">
+</head>
+<body>
+
+<!-- ── Blank state (shown before any campaign is loaded) ──────────────────── -->
+<div id="editor-blank" class="ed-blank">
+  <div class="ed-blank__panel">
+    <h1 class="ed-blank__title">Campaign Editor</h1>
+
+    <div class="drop-zone" id="blank-drop-zone">
+      <p class="drop-zone__label">Drop a campaign folder or ZIP here</p>
+      <div class="drop-zone__actions">
+        <button class="btn" id="blank-browse-btn">Browse folder…</button>
+        <input type="file" id="blank-folder-input" webkitdirectory multiple hidden>
+        <button class="btn btn--ghost" id="blank-zip-btn">Upload .zip…</button>
+        <input type="file" id="blank-zip-input" accept=".zip" hidden>
+      </div>
+      <p class="drop-zone__zip-label">Supports campaign folders and .zip archives</p>
+      <p class="drop-zone__status" id="blank-status"></p>
+      <div class="drop-zone__error" id="blank-error"></div>
+    </div>
+
+    <div class="ed-blank__divider">or</div>
+
+    <button class="btn ed-blank__new-btn" id="blank-new-btn">+ New campaign</button>
+  </div>
+</div>
+
+<!-- ── Loading state (shown briefly while awaiting BroadcastChannel handoff) ─ -->
+<div id="editor-loading" class="ed-loading hidden">
+  <p>Loading campaign…</p>
+</div>
+
+<!-- ── Editor shell (shown once a campaign is loaded) ─────────────────────── -->
+<div id="editor-shell" class="hidden">
+
+  <!-- Top bar -->
+  <header class="ed-topbar">
+    <span id="ed-title" class="ed-topbar__title">Untitled Campaign</span>
+    <div class="ed-topbar__actions">
+      <!-- Narrow viewport drawer toggles (hidden on wide screens) -->
+      <button class="btn btn--ghost btn--small ed-drawer-toggle" id="ed-sidebar-toggle"
+              aria-label="Toggle file/scene panel">☰</button>
+      <button class="btn btn--ghost btn--small ed-drawer-toggle" id="ed-val-toggle"
+              aria-label="Toggle validation panel">✓</button>
+      <!-- Action buttons -->
+      <button class="btn btn--ghost btn--small" id="ed-validate-btn">Validate</button>
+      <button class="btn btn--ghost btn--small" id="ed-play-btn" disabled>▶ Play</button>
+      <button class="btn btn--ghost btn--small" id="ed-zip-btn" disabled>↓ ZIP</button>
+    </div>
+  </header>
+
+  <!-- Body: sidebar | main | validation -->
+  <div class="ed-body">
+
+    <!-- ── Left sidebar ───────────────────────────────────────────────────── -->
+    <aside id="ed-sidebar" class="ed-sidebar">
+
+      <!-- Code mode: file tree -->
+      <div id="ed-filetree" class="ed-filetree">
+        <div class="ed-filetree__header">
+          <span class="ed-sidebar__label">Files</span>
+          <button class="btn btn--ghost btn--small" id="ed-add-file" title="Add new file">+</button>
+        </div>
+        <ul id="ed-filetree__list" class="ed-filetree__list"></ul>
+      </div>
+
+      <!-- Visual mode: scene list -->
+      <div id="ed-scenelist" class="ed-scenelist hidden">
+        <div class="ed-scenelist__header">
+          <span class="ed-sidebar__label">Scenes</span>
+          <button class="btn btn--ghost btn--small" id="ed-add-scene" title="Add new scene">+</button>
+        </div>
+        <ul id="ed-scenelist__list" class="ed-scenelist__list"></ul>
+        <div class="ed-scenelist__footer">
+          <button class="btn btn--ghost btn--small ed-items-nav-btn" id="ed-items-nav">
+            Items registry
+          </button>
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- ── Main editor pane ───────────────────────────────────────────────── -->
+    <main class="ed-main">
+
+      <!-- Mode toggle tabs -->
+      <div class="ed-mode-toggle" role="tablist">
+        <button id="ed-mode-code" class="ed-mode-btn ed-mode-btn--active" role="tab"
+                aria-selected="true">Code</button>
+        <button id="ed-mode-visual" class="ed-mode-btn" role="tab"
+                aria-selected="false">Visual</button>
+      </div>
+
+      <!-- ── Code pane ──────────────────────────────────────────────────── -->
+      <div id="ed-code-pane" class="ed-code-pane">
+        <div id="ed-parse-error" class="ed-parse-error hidden" role="alert"></div>
+        <div class="ed-editor-wrap">
+          <div id="ed-line-nums" class="ed-line-nums" aria-hidden="true"></div>
+          <textarea id="ed-textarea" class="ed-textarea"
+                    spellcheck="false" autocomplete="off" autocorrect="off"
+                    autocapitalize="off" aria-label="YAML editor"></textarea>
+        </div>
+      </div>
+
+      <!-- ── Visual pane ────────────────────────────────────────────────── -->
+      <div id="ed-visual-pane" class="ed-visual-pane hidden">
+
+        <!-- Metadata form — always visible at top of visual editor -->
+        <section id="ed-meta-form" class="ed-form-section">
+          <h2 class="ed-form-section__title">Campaign Metadata</h2>
+          <div class="ed-field-grid">
+
+            <label class="ed-label" for="ed-meta-title">Title</label>
+            <input class="ed-input" type="text" id="ed-meta-title" placeholder="My Campaign">
+
+            <label class="ed-label" for="ed-meta-author">Author</label>
+            <input class="ed-input" type="text" id="ed-meta-author" placeholder="Your name">
+
+            <label class="ed-label" for="ed-meta-version">Version</label>
+            <input class="ed-input" type="text" id="ed-meta-version" placeholder="1.0">
+
+            <label class="ed-label" for="ed-meta-description">Description</label>
+            <textarea class="ed-input ed-textarea-small" id="ed-meta-description"
+                      rows="2" placeholder="A short description"></textarea>
+
+            <label class="ed-label">Tags</label>
+            <div id="ed-meta-tags-container" class="ed-pill-container"></div>
+
+            <label class="ed-label" for="ed-meta-start">Start scene</label>
+            <select class="ed-select" id="ed-meta-start">
+              <option value="">(none)</option>
+            </select>
+
+            <label class="ed-label">Health</label>
+            <div class="ed-health-control">
+              <label class="ed-checkbox-label">
+                <input type="checkbox" id="ed-meta-no-health"> No health tracking
+              </label>
+              <input class="ed-input ed-input--narrow" type="number" id="ed-meta-health"
+                     min="0" placeholder="100">
+            </div>
+
+            <label class="ed-label">Starting inventory</label>
+            <div id="ed-meta-inventory-container" class="ed-pill-container"></div>
+
+          </div>
+        </section>
+
+        <!-- Scene editor form — shown when a scene is selected -->
+        <section id="ed-scene-form" class="ed-form-section hidden">
+          <h2 class="ed-form-section__title">
+            Scene: <span id="ed-scene-id-label"></span>
+            <button class="ed-rename-btn" id="ed-scene-rename-btn" title="Rename scene">✎</button>
+          </h2>
+
+          <div class="ed-field-grid">
+
+            <label class="ed-label" for="ed-scene-title">Title <span class="ed-optional">(optional)</span></label>
+            <input class="ed-input" type="text" id="ed-scene-title" placeholder="Scene title for map panel">
+
+            <label class="ed-label" for="ed-scene-text">Scene text</label>
+            <textarea class="ed-input ed-scene-text" id="ed-scene-text" rows="6"
+                      placeholder="Narrative text shown to the player."></textarea>
+
+            <label class="ed-label" for="ed-scene-terminal">Terminal</label>
+            <label class="ed-checkbox-label">
+              <input type="checkbox" id="ed-scene-terminal">
+              End scene (<code>end: true</code>) — hides choices
+            </label>
+
+          </div>
+
+          <!-- on_enter collapsible -->
+          <details id="ed-on-enter-details" class="ed-collapsible">
+            <summary class="ed-collapsible__header">on_enter events</summary>
+            <div class="ed-field-grid ed-collapsible__body">
+
+              <label class="ed-label" for="ed-oe-message">Message</label>
+              <input class="ed-input" type="text" id="ed-oe-message"
+                     placeholder="Shown before scene text">
+
+              <label class="ed-label" for="ed-oe-damage">Damage</label>
+              <input class="ed-input ed-input--narrow" type="number" id="ed-oe-damage"
+                     min="0" placeholder="0">
+
+              <label class="ed-label" for="ed-oe-heal">Heal</label>
+              <input class="ed-input ed-input--narrow" type="number" id="ed-oe-heal"
+                     min="0" placeholder="0">
+
+              <label class="ed-label">Gives items</label>
+              <div id="ed-oe-gives-items-container" class="ed-pill-container"></div>
+
+              <label class="ed-label">Removes items</label>
+              <div id="ed-oe-removes-items-container" class="ed-pill-container"></div>
+
+              <label class="ed-label">Gives notes</label>
+              <div id="ed-oe-gives-notes-container" class="ed-notes-list"></div>
+
+            </div>
+          </details>
+
+          <!-- Choices list (hidden when terminal) -->
+          <div id="ed-choices-section" class="ed-choices-section">
+            <div class="ed-choices-header">
+              <span class="ed-sidebar__label">Choices</span>
+              <button class="btn btn--ghost btn--small" id="ed-add-choice">+ Add choice</button>
+            </div>
+            <div id="ed-choices-list" class="ed-choices-list"></div>
+          </div>
+
+        </section>
+
+        <!-- Items registry view -->
+        <section id="ed-items-form" class="ed-form-section hidden">
+          <h2 class="ed-form-section__title">Items Registry</h2>
+          <p class="ed-form-section__hint">
+            Add descriptions for items used in your campaign. Items highlighted in
+            <span style="color:var(--ta-warning)">orange</span> are never granted anywhere.
+          </p>
+          <div id="ed-items-list" class="ed-items-list"></div>
+          <button class="btn btn--ghost btn--small ed-add-item-btn" id="ed-add-item">
+            + Add item
+          </button>
+        </section>
+
+      </div><!-- #ed-visual-pane -->
+
+    </main>
+
+    <!-- ── Validation panel ───────────────────────────────────────────────── -->
+    <aside id="ed-validation" class="ed-validation">
+      <div class="ed-validation__header">
+        <span class="ed-sidebar__label">Validation</span>
+      </div>
+      <div id="ed-validation__body" class="ed-validation__body">
+        <p class="ed-validation__empty">No campaign loaded.</p>
+      </div>
+    </aside>
+
+  </div><!-- .ed-body -->
+
+  <!-- Rename scene modal -->
+  <div class="modal-overlay" id="ed-rename-modal">
+    <div class="modal">
+      <div class="modal__header">
+        <span class="modal__title">Rename Scene</span>
+        <button class="modal__close" id="ed-rename-cancel">✕</button>
+      </div>
+      <div class="modal__body">
+        <p style="font-size:0.85rem;color:var(--ta-text-muted);margin-bottom:0.5rem;">
+          All choices pointing to this scene will be updated automatically.
+        </p>
+        <input class="ed-input" type="text" id="ed-rename-input"
+               placeholder="new_scene_id" style="width:100%">
+        <p class="modal__error hidden" id="ed-rename-error"></p>
+      </div>
+      <div style="display:flex;gap:0.5rem;justify-content:flex-end;padding-top:0.25rem;">
+        <button class="btn btn--ghost btn--small" id="ed-rename-cancel-2">Cancel</button>
+        <button class="btn btn--small" id="ed-rename-confirm">Rename</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mode-switch warning dialog (native <dialog>) -->
+  <dialog id="ed-switch-dialog" class="ed-dialog">
+    <p>Switching to Visual mode will discard your YAML formatting and comments if you
+       switch back to Code. Continue?</p>
+    <div class="ed-dialog__actions">
+      <button class="btn btn--ghost btn--small" id="ed-switch-cancel">Cancel</button>
+      <button class="btn btn--small" id="ed-switch-confirm">Continue</button>
+    </div>
+  </dialog>
+
+  <!-- Toast notification -->
+  <div id="ed-toast" class="ed-toast hidden" role="status" aria-live="polite"></div>
+
+</div><!-- #editor-shell -->
+
+<!-- Vendor libs (loaded as globals before any module) -->
+<script src="vendor/js-yaml.min.js"></script>
+<script src="vendor/jszip.min.js"></script>
+
+<!-- Editor module -->
+<script type="module" src="js/editor.js"></script>
+
+</body>
+</html>
