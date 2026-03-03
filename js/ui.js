@@ -33,6 +33,9 @@ let launchedFromDashboard = false;
 // Tracks whether the journal has been auto-expanded at least once this session
 let journalAutoExpanded = false;
 
+// Tracks last rendered health value to detect changes for animation
+let lastRenderedHealth = null;
+
 // Prevents double-submission of choices
 let stepping = false;
 
@@ -59,6 +62,8 @@ const sceneChoices    = document.getElementById('scene-choices');
 const inventoryList   = document.getElementById('inventory-list');
 const hudHealth       = document.getElementById('hud-health');
 const healthValue     = document.getElementById('health-value');
+const hudArmor        = document.getElementById('hud-armor');
+const armorValue      = document.getElementById('armor-value');
 
 const journalToggle   = document.getElementById('journal-toggle');
 const journalArrow    = document.getElementById('journal-arrow');
@@ -268,6 +273,7 @@ function renderChoicesOrTerminal(output) {
 function renderHUD(state) {
   renderInventory(state);
   renderHealth(state);
+  renderArmor(state);
   renderJournal(state);
   renderMap(state);
 }
@@ -322,9 +328,28 @@ function renderInventory(state) {
 function renderHealth(state) {
   if (state.health === null) {
     hudHealth.classList.add('hidden');
+    lastRenderedHealth = null;
   } else {
     hudHealth.classList.remove('hidden');
-    healthValue.textContent = String(state.health);
+    const max = state.maxHealth !== null ? ` / ${state.maxHealth}` : '';
+    healthValue.textContent = `${state.health}${max}`;
+
+    if (lastRenderedHealth !== null && state.health !== lastRenderedHealth) {
+      const cls = state.health < lastRenderedHealth ? 'hud-health--damage' : 'hud-health--heal';
+      hudHealth.classList.remove('hud-health--damage', 'hud-health--heal');
+      void hudHealth.offsetWidth; // reflow to re-trigger animation
+      hudHealth.classList.add(cls);
+    }
+    lastRenderedHealth = state.health;
+  }
+}
+
+function renderArmor(state) {
+  if (!state.armor) {
+    hudArmor.classList.add('hidden');
+  } else {
+    hudArmor.classList.remove('hidden');
+    armorValue.textContent = String(state.armor);
   }
 }
 
@@ -368,6 +393,7 @@ function renderMap(state) {
 
     const li = document.createElement('li');
     li.className = 'map-entry' + (isCurrent ? ' map-entry--current' : '');
+    if (scene?.text) li.title = scene.text;
 
     if (isCurrent) {
       const marker = document.createElement('span');
@@ -425,6 +451,18 @@ function collapseSection(name, updateArrow) {
 // ─── Header buttons ───────────────────────────────────────────────────────────
 
 function wireButtons() {
+  document.addEventListener('keydown', (e) => {
+    if (stepping) return;
+    if (!currentOutput || currentOutput.isTerminal) return;
+    if (loadModal.classList.contains('modal-overlay--visible')) return;
+    const n = parseInt(e.key, 10);
+    if (n >= 1 && n <= 9) {
+      const buttons = sceneChoices.querySelectorAll('.choice-btn');
+      const btn = buttons[n - 1];
+      if (btn) btn.click();
+    }
+  });
+
   saveBtn.addEventListener('click', handleSave);
   loadBtn.addEventListener('click', handleOpenLoadModal);
   loadModalClose.addEventListener('click', closeLoadModal);

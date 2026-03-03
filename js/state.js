@@ -12,13 +12,17 @@ export class PlayerState {
    * @param {string} opts.sceneId
    * @param {string[]} [opts.inventory]
    * @param {number|null} [opts.health]
+   * @param {number|null} [opts.maxHealth]
+   * @param {number} [opts.armor]
    * @param {string[]} [opts.visited]
    * @param {string[]} [opts.notes]
    */
-  constructor({ sceneId, inventory = [], health = null, visited = [], notes = [] }) {
+  constructor({ sceneId, inventory = [], health = null, maxHealth = null, armor = 0, visited = [], notes = [] }) {
     this.sceneId = sceneId;
     this.inventory = inventory;
     this.health = health;
+    this.maxHealth = maxHealth;
+    this.armor = armor;
     this.visited = visited;
     this.notes = notes;
   }
@@ -29,6 +33,8 @@ export class PlayerState {
       sceneId: this.sceneId,
       inventory: [...this.inventory],
       health: this.health,
+      maxHealth: this.maxHealth,
+      armor: this.armor,
       visited: [...this.visited],
       notes: [...this.notes],
     });
@@ -40,6 +46,8 @@ export class PlayerState {
       scene_id: this.sceneId,
       inventory: [...this.inventory],
       health: this.health,
+      max_health: this.maxHealth,
+      armor: this.armor,
       visited: [...this.visited],
       notes: [...this.notes],
     };
@@ -57,6 +65,8 @@ export class PlayerState {
       sceneId: data.scene_id,
       inventory: [...(data.inventory ?? [])],
       health: data.health ?? null,
+      maxHealth: data.max_health ?? null,
+      armor: data.armor ?? 0,
       visited: [...(data.visited ?? [])],
       notes: [...(data.notes ?? [])],
     });
@@ -70,10 +80,14 @@ export class PlayerState {
   static fromCampaign(campaign) {
     const def = campaign.metadata?.default_player_state ?? {};
     const rawHealth = def.health;
+    const rawMaxHealth = def.max_health;
+    const rawArmor = def.armor;
     return new PlayerState({
       sceneId: campaign.metadata.start,
       inventory: [...(def.inventory ?? [])],
       health: rawHealth != null ? Number(rawHealth) : null,
+      maxHealth: rawMaxHealth != null ? Number(rawMaxHealth) : null,
+      armor: rawArmor != null ? Number(rawArmor) : 0,
     });
   }
 }

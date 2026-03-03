@@ -109,13 +109,27 @@
 /* ── Sidebar (left column) ────────────────────────────────────────────────── */
 
 .ed-sidebar {
-  width: 180px;
+  width: var(--sidebar-width, 180px);
   flex-shrink: 0;
   border-right: 1px solid var(--ta-border);
   background-color: var(--ta-surface);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+
+.ed-resizer {
+  width: 5px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background-color: transparent;
+  transition: background-color 150ms;
+  z-index: 1;
+}
+
+.ed-resizer:hover,
+.ed-resizer--dragging {
+  background-color: var(--ta-accent);
 }
 
 .ed-sidebar__label {
@@ -255,15 +269,6 @@
   white-space: nowrap;
 }
 
-.ed-scenelist__preview {
-  font-size: 0.72rem;
-  color: var(--ta-text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  width: 100%;
-  padding-left: calc(var(--ta-spacing) + 0.65rem);
-}
 
 .ed-scenelist__delete {
   background: none;
@@ -337,13 +342,10 @@
   color: var(--ta-text-muted);
 }
 
-/* Chevron arrow — static decoration */
+/* Chevron hidden — sections navigate on click, arrow not needed */
 .ed-nav-section__chevron {
-  font-style: normal;
-  line-height: 1;
-  flex-shrink: 0;
+  display: none;
 }
-.ed-nav-section__chevron::before { content: '›'; font-size: 1rem; }
 
 /* ── Scene graph ─────────────────────────────────────────────────────────── */
 
@@ -787,6 +789,13 @@ details[open] .ed-collapsible__header::before {
   gap: 0.3em;
 }
 
+.ed-choice-card__num {
+  font-size: 0.75rem;
+  color: var(--ta-text-muted);
+  flex-shrink: 0;
+  min-width: 1.5em;
+}
+
 .ed-choice-card__label {
   flex: 1;
   font-size: 0.82rem;
@@ -817,6 +826,29 @@ details[open] .ed-collapsible__header::before {
 
 .ed-choice-card__btn--danger:hover {
   color: var(--ta-danger);
+}
+
+.ed-choice-card__drag-handle {
+  cursor: grab;
+  color: var(--ta-text-muted);
+  padding: 0 0.15em;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+  user-select: none;
+  line-height: 1;
+}
+
+.ed-choice-card__drag-handle:active {
+  cursor: grabbing;
+}
+
+.ed-choice-card--dragging {
+  opacity: 0.4;
+}
+
+.ed-choice-card--drag-over {
+  outline: 2px dashed var(--ta-accent);
+  outline-offset: -2px;
 }
 
 .ed-choice-card__body {

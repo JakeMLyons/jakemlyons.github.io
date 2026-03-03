@@ -90,11 +90,20 @@ export function applyChoiceHealth(choice, state) {
   const messages = [];
 
   if (damage) {
-    newState.health -= damage;
-    messages.push(`You took ${damage} damage! Health: ${newState.health}`);
+    const armor = Number(newState.armor ?? 0);
+    const effectiveDamage = Math.max(0, damage - armor);
+    newState.health -= effectiveDamage;
+    if (effectiveDamage > 0) {
+      messages.push(`You took ${effectiveDamage} damage! Health: ${newState.health}`);
+    } else {
+      messages.push(`Your armor absorbed the damage!`);
+    }
   }
   if (heal) {
     newState.health += heal;
+    if (newState.maxHealth !== null) {
+      newState.health = Math.min(newState.health, newState.maxHealth);
+    }
     messages.push(`You recovered ${heal} health! Health: ${newState.health}`);
   }
 
@@ -152,11 +161,20 @@ export function applySceneEvents(scene, state) {
     const damage = Number(onEnter.damage ?? 0);
     const heal = Number(onEnter.heal ?? 0);
     if (damage) {
-      newState.health -= damage;
-      messages.push(`You took ${damage} damage! Health: ${newState.health}`);
+      const armor = Number(newState.armor ?? 0);
+      const effectiveDamage = Math.max(0, damage - armor);
+      newState.health -= effectiveDamage;
+      if (effectiveDamage > 0) {
+        messages.push(`You took ${effectiveDamage} damage! Health: ${newState.health}`);
+      } else {
+        messages.push(`Your armor absorbed the damage!`);
+      }
     }
     if (heal) {
       newState.health += heal;
+      if (newState.maxHealth !== null) {
+        newState.health = Math.min(newState.health, newState.maxHealth);
+      }
       messages.push(`You recovered ${heal} health! Health: ${newState.health}`);
     }
   }
