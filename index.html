@@ -5,6 +5,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Text Adventure Engine</title>
   <link rel="stylesheet" href="css/style.css">
+  <script>
+    // Redirect to dashboard if this page is opened without a campaign handoff.
+    // Runs before modules load so it works even if a module import fails.
+    if (!location.search.includes('handoff')) {
+      try {
+        if (!localStorage.getItem('adventure_pending_campaign')) {
+          location.replace('dashboard.html');
+        }
+      } catch {
+        location.replace('dashboard.html');
+      }
+    }
+  </script>
 </head>
 <body>
 
