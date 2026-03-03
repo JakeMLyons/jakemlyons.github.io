@@ -1,14 +1,114 @@
+
 # Text Adventure Engine
 
-A browser-based text adventure engine. Load a campaign, read, choose, survive (or don't). No install required.
+A browser-based text adventure engine. Play interactive branching stories, build your own campaigns, and embed them anywhere. No install required.
 
-[Link to Dashboard](http://jakemlyons.github.io "Link to dashboard")
+---
+
+## Getting Started
+
+Open **dashboard.html** in your browser (or visit the hosted version [here](http://jakemlyons.github.io "Link to dashboard"))
+
+Five campaigns load automatically — click any card to see details, then click **Launch** to play.
+
+> **Tip:** If you're running this locally, serve the folder with a static file server rather than opening files directly. Browser security restrictions can block local file loading.
+>
+> ```bash
+> python -m http.server 8080
+> # then open http://localhost:8080
+> ```
+
+---
+
+## Playing a Campaign
+
+### The basics
+
+When a scene loads, you'll see story text followed by a list of choices. Click a choice to advance. Some choices only appear if you're carrying the right item — explore carefully and pick things up when you can.
+
+In campaigns that track health, certain choices or locations can damage or heal you. Reach 0 health and it's game over.
+
+### The HUD sidebar
+
+| Panel     | What it shows                                                           |
+| --------- | ----------------------------------------------------------------------- |
+| Inventory | Items you're currently carrying. Click an item to read its description. |
+| Health    | Your current health value. Hidden in campaigns that don't track health. |
+| Journal   | Notes and discoveries accumulated during your playthrough.              |
+| Map       | A list of scenes you have visited, in order.                            |
+
+### Toolbar actions
+
+| Button                | What it does                                                    |
+| --------------------- | --------------------------------------------------------------- |
+| **Look**        | Redisplay the current scene text                                |
+| **Save / Load** | Open the save panel to save, restore, download, or upload saves |
+| **Restart**     | Restart the campaign from the beginning                         |
+| **Help**        | Show in-game help                                               |
+
+---
+
+## Loading Your Own Campaign
+
+From the **Dashboard**, drag and drop a campaign folder or ZIP onto the library panel, or click **Browse** to pick one. The campaign is added to your library for this session and you can launch it at any time.
+
+You can also load a campaign directly in the game player via the **Browse Folder** or **Upload ZIP** buttons on the drop zone.
+
+---
+
+## Saving Your Progress
+
+Saves are stored in your browser's local storage, named after the campaign and the time they were created. They persist across sessions as long as you don't clear your browser's site data.
+
+From the **Save / Load** panel you can:
+
+- **Save** — save your current position
+- **Load** — restore a previous save
+- **Download** — export a save as a `.json` file (useful for backup or moving between devices)
+- **Upload** — import a previously downloaded `.json` save
+
+> **Note:** Clearing browser storage (cookies, site data, local storage) will delete your saves. Download important saves if you want to keep them long-term.
+
+---
+
+## The Dashboard
+
+The dashboard (`dashboard.html`) is the main hub for browsing and launching campaigns.
+
+- The five bundled campaigns load automatically when the dashboard opens.
+- Add your own campaigns by dragging folders or ZIPs onto the library panel.
+- Click a campaign card to see its metadata, scene list, and validation status.
+- Click **Launch** to open a campaign in the game player.
+- Click **Edit** to open a campaign in the campaign editor.
+
+The library holds up to 10 campaigns per session. It is not persisted — campaigns you add manually must be re-added each time you open the dashboard. Save data does persist in local storage.
+
+---
+
+## The Campaign Editor
+
+Open **editor.html** to create or edit campaigns. Two modes are available, switchable at any time:
+
+**Code mode** — Write and edit raw YAML directly. A file-tree sidebar lets you switch between files in multi-file campaigns. Line numbers are shown alongside the editor. Good for experienced authors who prefer full control.
+
+**Visual mode** — Edit metadata, scenes, and item descriptions using forms. No YAML knowledge required. A collapsible sidebar lists all scenes so you can jump between them.
+
+Both modes work on the same in-memory campaign. Switching modes converts the data between representations automatically.
+
+A **Validation** panel (toggled from the toolbar) shows errors and warnings in real time: missing scene references, unreachable scenes, reserved name collisions, and more.
+
+When you're done:
+
+- Click **Export ZIP** to download the campaign as a `.zip` archive.
+- Click **Play** to launch it directly in the game player without downloading anything.
 
 ---
 
 ## Creating Your Own Campaign
 
-A campaign is a folder containing a required `metadata.yaml` file and one or more scene `*.yaml` files. Here's a minimal example:
+A campaign is a folder containing a `metadata.yaml` file and one or more scene `*.yaml` files. You can write these by hand or use the **Visual mode** in the editor.
+
+**Minimal structure:**
 
 ```
 MyAdventure/
@@ -22,15 +122,13 @@ MyAdventure/
 metadata:
   title: "My Adventure"
   description: "A short description."
-  tags:
-    - fantasy
   start: begin
   default_player_state:
-    health: 20         # optional — omit to disable health tracking entirely
+    health: 20       # omit this line entirely to disable health tracking
     inventory: []
 ```
 
-**scenes.yaml** (or split across multiple files however you like):
+**scenes.yaml:**
 
 ```yaml
 scenes:
@@ -43,26 +141,19 @@ scenes:
         next: sleep_end
 
   look:
-    title: "The Strange Room"           # optional — shown in the map panel
     text: "You spot a rusty key on the floor."
-    on_enter:
-      message: "The air smells of damp stone."   # printed before scene text
-      gives_notes:
-        - "You woke in a strange room. Something doesn't feel right."
     choices:
       - label: "Pick up the key"
         next: have_key
         gives_items:
           - rusty key
-        gives_notes:
-          - "You found a rusty key on the floor of the room."
       - label: "Leave it"
         next: sleep_end
 
   have_key:
     text: "There's a locked door. The key might fit."
     choices:
-      - label: "Use the rusty key on the door"
+      - label: "Use the key"
         next: escaped
         requires_item: "rusty key"
 
@@ -75,27 +166,44 @@ scenes:
     end: true
 
 items:
-  rusty key: "A small iron key, orange with age. Fits most simple locks."
+  rusty key: "A small iron key, orange with age."
 ```
 
-**The key things to know:**
+**Key rules:**
 
-* A campaign is always a folder. Even a single-file campaign needs a folder with `metadata.yaml` and one scene file.
-* `metadata.yaml` contains only metadata — no scenes. All `*.yaml` files other than `metadata.yaml` are treated as scene files and merged into a single flat namespace.
-* Scene files can be named and ordered however you like. Splitting by act, location, or chapter is encouraged for larger campaigns.
-* Scene IDs must be unique across all scene files in the folder. A duplicate ID is reported as an error.
-* Every scene needs a unique ID (the key under `scenes:`).
-* Non-ending scenes must have at least one `choices` entry.
-* `next` must match an existing scene ID exactly — scenes can reference each other freely across files.
-* Mark dead-end scenes with `end: true` — no choices needed on these.
-* `title` on a scene is optional and used by the map panel. Without it, the map shows the first 50 characters of the scene text.
-* `gives_items` on a choice adds items to the player's inventory when that choice is selected.
-* `gives_notes` on a choice (or in an `on_enter` block) adds journal entries. Duplicate entries are silently skipped.
-* `requires_item` on a choice hides it from the player until they're carrying the named item. Item names are case-sensitive.
-* `requires_items` (a list) hides a choice until the player holds *all* listed items. `requires_item` and `requires_items` can coexist on the same choice.
-* `damage` and `heal` on a choice adjust health when that choice is selected. If health hits 0, the game ends immediately.
-* `on_enter` on a scene fires automatically when the player arrives, before the scene text is shown. It supports `message`, `gives_items`, `gives_notes`, `damage`, and `heal`. Use it for environmental effects (traps, healing springs, automatic discoveries) rather than deliberate player choices.
-* `default_player_state.health` sets the starting health value. Omit it entirely and health tracking is disabled for the whole campaign — `damage`, `heal`, and health effects in `on_enter` are all silently ignored.
-* The `start` field in `metadata` sets which scene the game begins on.
-* The optional `items:` block (in any scene file) maps item names to descriptions shown when you click an item in the inventory panel. Item descriptions are purely flavour — they have no effect on game mechanics.
-* To check a campaign for errors before playing, load it in the dashboard and click **Validate**. The validator checks reachability, missing scene references, and reserved name collisions, and shows advisory warnings for items with no description.
+- `metadata.yaml` is required and contains only metadata — no scenes.
+- Scene IDs must be unique across all YAML files in the folder.
+- Every non-ending scene must have at least one choice. Ending scenes have `end: true` and no choices.
+- `next` on a choice must match an existing scene ID exactly.
+- `gives_items` adds items to the player's inventory when a choice is selected.
+- `requires_item` hides a choice until the player carries the named item (case-sensitive).
+- `requires_items` (a list) hides a choice until the player holds *all* listed items.
+- `damage` and `heal` on a choice adjust health immediately. Reaching 0 health ends the game.
+- `on_enter` on a scene fires automatically on arrival — useful for traps, automatic discoveries, and environmental effects.
+- Omitting `default_player_state.health` disables health tracking for the entire campaign.
+
+---
+
+## The Web Component
+
+You can embed any campaign on your own web page using the `<text-adventure>` custom element:
+
+```html
+<script src="vendor/js-yaml.min.js"></script>
+<script src="vendor/jszip.min.js"></script>
+<script type="module" src="js/widget.js"></script>
+
+<text-adventure src="https://example.com/MyAdventure.zip"></text-adventure>
+```
+
+The component runs in a shadow DOM, isolated from the host page's styles. Saves are scoped per `src` URL so multiple instances on the same page don't conflict.
+
+Appearance is controlled via CSS custom properties:
+
+```css
+text-adventure {
+    --ta-bg:     #1a1a2e;
+    --ta-text:   #e0e0e0;
+    --ta-accent: #c8a96e;
+}
+```
