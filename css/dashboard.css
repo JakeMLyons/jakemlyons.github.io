@@ -207,6 +207,12 @@ body {
   border-color: var(--ta-accent);
 }
 
+.campaign-card__badge--draft {
+  background-color: color-mix(in srgb, var(--ta-warning) 15%, var(--ta-surface));
+  color: var(--ta-warning);
+  border-color: var(--ta-warning);
+}
+
 .campaign-card__remove {
   position: absolute;
   top: 0.4rem;

@@ -44,6 +44,7 @@ const detailPanel       = document.getElementById('detail-panel');
 document.addEventListener('DOMContentLoaded', () => {
   newCampaignBtn.addEventListener('click', () => { window.location.href = 'editor.html?new'; });
   wireLoadSubpanel();
+  loadEditorDraft();
   renderLibrary();
   loadPackagedCampaigns();
 });
@@ -89,6 +90,35 @@ async function loadPackagedCampaigns() {
   renderLibrary();
 }
 
+
+// ─── Editor draft auto-loading ────────────────────────────────────────────────
+
+async function loadEditorDraft() {
+  const raw = localStorage.getItem('adventure_editor_draft');
+  if (!raw) return;
+  try {
+    const draft = JSON.parse(raw);
+    if (!draft?.files) return;
+    const files = Object.entries(draft.files).map(([path, text]) => ({ path, text }));
+    const campaign = await loadCampaign(files);
+    const validation = validateCampaign(campaign);
+    const entry = {
+      id: 'editor_draft',
+      name: campaign.metadata?.title ?? 'Untitled Draft',
+      campaign,
+      validation,
+      files,
+      loadedAt: new Date(draft.savedAt),
+      isDraft: true,
+      draftSavedAt: new Date(draft.savedAt),
+    };
+    library = library.filter((e) => e.id !== 'editor_draft');
+    library.unshift(entry);
+    renderLibrary();
+  } catch {
+    // Malformed draft — ignore silently
+  }
+}
 
 // ─── Load sub-panel wiring ────────────────────────────────────────────────────
 
@@ -311,6 +341,13 @@ function buildCard(entry) {
   const meta = document.createElement('div');
   meta.className = 'campaign-card__meta';
   meta.textContent = `${sceneCount} scenes · ${endingCount} ending${endingCount !== 1 ? 's' : ''}`;
+
+  if (entry.isDraft) {
+    const draftBadge = document.createElement('span');
+    draftBadge.className = 'campaign-card__badge campaign-card__badge--draft';
+    draftBadge.textContent = '✎ draft';
+    meta.appendChild(draftBadge);
+  }
 
   if (hasHealth) {
     const hBadge = document.createElement('span');
