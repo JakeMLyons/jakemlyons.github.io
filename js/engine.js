@@ -1,8 +1,6 @@
 /**
  * engine.js — The core game engine as a pure state machine.
  *
- * Direct JS port of adventure/engine.py.
- *
  * GameEngine is stateless: it holds only the immutable campaign dict.
  * All mutable state lives in PlayerState, which callers own between turns.
  *
@@ -17,7 +15,7 @@
 
 import { getAvailableChoices } from './choices.js';
 import {
-  applyChoiceHealth,
+  applyAttributeEffects,
   applyItemGrants,
   applyItemRemovals,
   applyNoteGrants,
@@ -28,7 +26,7 @@ import { GameOutput, PlayerState } from './state.js';
 
 export class GameEngine {
   /**
-   * @param {{ metadata: object, scenes: object, items: object }} campaign
+   * @param {{ metadata: object, scenes: object, items: object, recipes: object[] }} campaign
    */
   constructor(campaign) {
     this._campaign = campaign;
@@ -40,8 +38,7 @@ export class GameEngine {
    * Produce the first GameOutput for a session.
    *
    * If initialState is provided (e.g. loaded from a save file), that state
-   * is used directly. Otherwise the campaign's default_player_state seeds
-   * the session.
+   * is used directly. Otherwise the campaign's metadata seeds the session.
    *
    * @param {PlayerState|null} [initialState]
    * @returns {GameOutput}
@@ -80,19 +77,17 @@ export class GameEngine {
     const chosen = available[pick];
     let messages = [];
 
-    const itemWeights = this._campaign.itemWeights ?? {};
-
     // 1. Apply item grants
-    let result = applyItemGrants(chosen, state, itemWeights);
+    let result = applyItemGrants(chosen, state, this._campaign);
     state = result.newState;
     messages.push(...result.messages);
 
     // 1.5 Apply item removals
-    result = applyItemRemovals(chosen, state);
+    result = applyItemRemovals(chosen, state, this._campaign);
     state = result.newState;
 
     // 1.6 Auto-fire recipes after item changes
-    result = applyRecipes(state, this._campaign.recipes ?? [], itemWeights);
+    result = applyRecipes(state, this._campaign.recipes ?? [], this._campaign);
     state = result.newState;
     messages.push(...result.messages);
 
@@ -101,13 +96,13 @@ export class GameEngine {
     state = result.newState;
     messages.push(...result.messages);
 
-    // 3. Apply choice health
-    result = applyChoiceHealth(chosen, state);
+    // 3. Apply choice attribute effects
+    result = applyAttributeEffects(chosen, state, this._campaign);
     state = result.newState;
     messages.push(...result.messages);
 
     // 4. Death check after choice effects
-    if (state.health !== null && state.health <= 0) {
+    if (result.died) {
       return new GameOutput({
         state,
         sceneText: '',
@@ -115,6 +110,7 @@ export class GameEngine {
         messages,
         isTerminal: true,
         terminalReason: 'death',
+        deathMessage: result.deathMessage,
       });
     }
 
@@ -141,23 +137,12 @@ export class GameEngine {
     const scene = this._scenes[state.sceneId];
 
     // 6. Apply scene entry events (on_enter)
-    const itemWeights = this._campaign.itemWeights ?? {};
-    let result = applySceneEvents(scene, state, itemWeights);
+    let result = applySceneEvents(scene, state, this._campaign);
     state = result.newState;
     messages.push(...result.messages);
 
-    // 6.5 Auto-fire recipes after on_enter item changes
-    result = applyRecipes(state, this._campaign.recipes ?? [], itemWeights);
-    state = result.newState;
-    messages.push(...result.messages);
-
-    // 7. Record visit
-    const visitState = state.copy();
-    visitState.visited.push(state.sceneId);
-    state = visitState;
-
-    // 8. Death check after on_enter effects
-    if (state.health !== null && state.health <= 0) {
+    // 6.5 Death check after on_enter effects
+    if (result.died) {
       return new GameOutput({
         state,
         sceneText: scene.text,
@@ -165,8 +150,19 @@ export class GameEngine {
         messages,
         isTerminal: true,
         terminalReason: 'death',
+        deathMessage: result.deathMessage,
       });
     }
+
+    // 6.6 Auto-fire recipes after on_enter item changes
+    result = applyRecipes(state, this._campaign.recipes ?? [], this._campaign);
+    state = result.newState;
+    messages.push(...result.messages);
+
+    // 7. Record visit
+    const visitState = state.copy();
+    visitState.visited.push(state.sceneId);
+    state = visitState;
 
     const sceneText = scene.text;
 
@@ -182,7 +178,7 @@ export class GameEngine {
       });
     }
 
-    // 9. Filter available choices
+    // 8. Filter available choices
     const available = getAvailableChoices(scene.choices ?? [], state.inventory);
 
     if (available.length === 0) {

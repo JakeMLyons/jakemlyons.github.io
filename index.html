@@ -27,7 +27,6 @@
 
   <!-- Header -->
   <header class="game-header">
-    <h1 class="game-header__title" id="game-title">Text Adventure</h1>
     <nav class="game-header__nav">
       <a href="dashboard.html" class="game-header__dashboard-link hidden" id="dashboard-link-game">← Dashboard</a>
       <div class="save-feedback" id="save-feedback"></div>
@@ -63,15 +62,11 @@
   <!-- Main content: scene + HUD -->
   <div class="game-content">
 
-    <!-- Scene panel -->
-    <main class="scene-panel" id="scene-panel">
-      <div class="scene-panel__messages" id="scene-messages"></div>
-      <p class="scene-panel__text" id="scene-text"></p>
-      <div class="scene-panel__choices" id="scene-choices"></div>
-    </main>
-
     <!-- HUD panel -->
     <aside class="hud-panel">
+
+      <!-- Campaign title -->
+      <div class="hud-title" id="game-title">Text Adventure</div>
 
       <!-- Inventory -->
       <div class="hud-section" id="hud-inventory">
@@ -81,23 +76,8 @@
         </div>
       </div>
 
-      <!-- Health (hidden when health is null) -->
-      <div class="hud-section" id="hud-health">
-        <div class="hud-section__label">Health</div>
-        <div class="hud-section__value" id="health-value"></div>
-      </div>
-
-      <!-- Armor (hidden when armor is 0) -->
-      <div class="hud-section hidden" id="hud-armor">
-        <div class="hud-section__label">Armor</div>
-        <div class="hud-section__value" id="armor-value"></div>
-      </div>
-
-      <!-- Carry weight (hidden when maxCarryWeight is null) -->
-      <div class="hud-section hidden" id="hud-carry">
-        <div class="hud-section__label">Weight</div>
-        <div class="hud-section__value" id="carry-value"></div>
-      </div>
+      <!-- Attributes (rendered dynamically by ui.js) -->
+      <div id="hud-attributes" class="hidden"></div>
 
       <!-- Journal (collapsible) -->
       <div class="hud-collapsible" id="hud-journal-container">
@@ -139,6 +119,14 @@
       </div>
 
     </aside>
+
+    <!-- Scene panel -->
+    <main class="scene-panel" id="scene-panel">
+      <div class="scene-panel__messages" id="scene-messages"></div>
+      <p class="scene-panel__text" id="scene-text"></p>
+      <div class="scene-panel__choices" id="scene-choices"></div>
+    </main>
+
   </div><!-- .game-content -->
 
 </div><!-- #game-screen -->

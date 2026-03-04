@@ -264,20 +264,21 @@ body {
   display: flex;
   align-items: center;
   gap: var(--ta-spacing);
-  padding: calc(var(--ta-spacing) * 0.6) calc(var(--ta-spacing) * 1.25);
+  padding: calc(var(--ta-spacing) * 0.5) calc(var(--ta-spacing) * 1.25);
   background-color: var(--ta-surface);
   border-bottom: 1px solid var(--ta-border);
   flex-shrink: 0;
   flex-wrap: wrap;
+  min-height: 42px;
 }
 
-.game-header__title {
+.hud-title {
   font-family: var(--ta-font-body);
-  font-size: 1rem;
+  font-size: 0.9rem;
   font-weight: normal;
   color: var(--ta-text);
-  flex: 1;
-  min-width: 0;
+  padding: calc(var(--ta-spacing) * 0.75) var(--ta-spacing);
+  border-bottom: 1px solid var(--ta-border);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -434,7 +435,7 @@ body {
 .hud-panel {
   width: var(--ta-hud-width);
   flex-shrink: 0;
-  border-left: 1px solid var(--ta-border);
+  border-right: 1px solid var(--ta-border);
   background-color: var(--ta-surface);
   overflow-y: auto;
   display: flex;
@@ -578,10 +579,10 @@ body {
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  .hud-health--damage {
+  .hud-attr--damage {
     animation: health-damage 700ms ease-out;
   }
-  .hud-health--heal {
+  .hud-attr--heal {
     animation: health-heal 700ms ease-out;
   }
 }
@@ -966,12 +967,12 @@ body {
 @media (max-width: 640px) {
   .hud-panel {
     width: 100%;
-    border-left: none;
-    border-top: 1px solid var(--ta-border);
+    border-right: none;
+    border-bottom: 1px solid var(--ta-border);
   }
 
   .game-content {
-    flex-direction: column;
+    flex-direction: column-reverse;
   }
 
   .scene-panel {

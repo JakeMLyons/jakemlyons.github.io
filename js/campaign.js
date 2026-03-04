@@ -1,11 +1,11 @@
 /**
  * campaign.js — Campaign loading and validation.
  *
- * Direct JS port of adventure/campaign.py.
- *
  * loadCampaign() accepts a { path, text } file list (normalised by the caller
  * from either a folder drop or ZIP extraction) and returns:
- *   { metadata, scenes, items }
+ *   { metadata, scenes, items, recipes }
+ *
+ * items shape: { name: { description: string, affect_attributes: object } }
  *
  * validateCampaign() returns an array of { level: 'error'|'warning', message }
  * objects. An empty array means the campaign is valid.
@@ -17,7 +17,7 @@
 // Reserved CLI command names — must stay in sync with Python RESERVED_COMMAND_NAMES
 // and the COMMANDS dict in cli.py.
 export const RESERVED_COMMAND_NAMES = new Set([
-  'inventory', 'health', 'status', 'save', 'load',
+  'inventory', 'status', 'save', 'load',
   'look', 'quit', 'help', 'map', 'notes', 'restart', 'examine',
 ]);
 
@@ -25,7 +25,7 @@ export const RESERVED_COMMAND_NAMES = new Set([
  * Load and merge a campaign from an array of { path, text } file objects.
  *
  * @param {{ path: string, text: string }[]} files
- * @returns {Promise<{ metadata: object, scenes: object, items: object }>}
+ * @returns {Promise<{ metadata: object, scenes: object, items: object, recipes: object[] }>}
  * @throws {Error} for missing metadata.yaml, no scene files, duplicates, parse errors
  */
 export async function loadCampaign(files) {
@@ -109,13 +109,13 @@ export async function loadCampaign(files) {
     }
 
     const items = doc.items ?? {};
-    for (const [itemName, description] of Object.entries(items)) {
+    for (const [itemName, value] of Object.entries(items)) {
       if (itemName in mergedItems) {
         throw new Error(
           `Duplicate item '${itemName}' in items registry found in '${filename}' and '${itemSourceFiles[itemName]}'.`
         );
       }
-      mergedItems[itemName] = description;
+      mergedItems[itemName] = value;
       itemSourceFiles[itemName] = filename;
     }
 
@@ -126,16 +126,20 @@ export async function loadCampaign(files) {
     }
   }
 
-  // Normalise items: accept both string values (old format) and
-  // {description, weight} dicts (new format). Always keep campaign.items as
-  // plain strings so existing code (editor, widget, tests) is unaffected.
-  const itemWeights = {};
+  // Normalise items: accept both string values (simple format) and
+  // { description, affect_attributes } dicts (extended format).
+  // Always normalise to { description: string, affect_attributes: object }.
   for (const [name, value] of Object.entries(mergedItems)) {
     if (typeof value === 'object' && value !== null) {
-      mergedItems[name] = String(value.description ?? '');
-      itemWeights[name] = Number(value.weight ?? 0);
+      mergedItems[name] = {
+        description: String(value.description ?? ''),
+        affect_attributes: value.affect_attributes ?? {},
+      };
     } else {
-      itemWeights[name] = 0;
+      mergedItems[name] = {
+        description: String(value ?? ''),
+        affect_attributes: {},
+      };
     }
   }
 
@@ -143,15 +147,12 @@ export async function loadCampaign(files) {
     metadata,
     scenes: mergedScenes,
     items: mergedItems,
-    itemWeights,
     recipes: mergedRecipes,
   };
 }
 
 /**
  * Validate campaign structure and scene graph.
- *
- * Direct port of validate_campaign() from campaign.py.
  *
  * @param {{ metadata: object, scenes: object, items: object }} campaign
  * @returns {{ level: 'error'|'warning', message: string }[]}
@@ -161,6 +162,7 @@ export function validateCampaign(campaign) {
   const scenes = campaign.scenes ?? {};
   const metadata = campaign.metadata ?? {};
   const itemsRegistry = campaign.items ?? {};
+  const attrDefs = metadata.attributes ?? {};
 
   function err(message) { results.push({ level: 'error', message }); }
   function warn(message) { results.push({ level: 'warning', message }); }
@@ -174,6 +176,14 @@ export function validateCampaign(campaign) {
     err(`metadata.start refers to unknown scene: '${start}'`);
   }
 
+  // ── Attribute definition checks ──────────────────────────────────────────
+
+  for (const [attrName, def] of Object.entries(attrDefs)) {
+    if (def.min != null && def.max != null && Number(def.min) >= Number(def.max)) {
+      warn(`Attribute '${attrName}': min (${def.min}) is >= max (${def.max}).`);
+    }
+  }
+
   // ── Scene checks ─────────────────────────────────────────────────────────
 
   const allItemNamesUsed = new Set();
@@ -181,8 +191,22 @@ export function validateCampaign(campaign) {
   const allRemovedItems = new Set();
 
   // Starting inventory is implicitly "granted" for dead-removal analysis
-  for (const item of metadata.default_player_state?.inventory ?? []) {
+  for (const item of metadata.inventory ?? []) {
     allGrantedItems.add(item);
+  }
+
+  /**
+   * Validate affect_attributes references in a block (choice or on_enter).
+   * @param {object} block
+   * @param {string} context - description for warning messages
+   */
+  function checkAffectAttributes(block, context) {
+    const affects = block.affect_attributes ?? {};
+    for (const attrName of Object.keys(affects)) {
+      if (!(attrName in attrDefs)) {
+        warn(`${context}: 'affect_attributes' references unknown attribute '${attrName}'.`);
+      }
+    }
   }
 
   for (const [sceneId, scene] of Object.entries(scenes)) {
@@ -201,8 +225,7 @@ export function validateCampaign(campaign) {
       );
     }
 
-    // requires_item at scene level is a schema violation — the engine only reads
-    // it on choices, so it is silently ignored when placed on a scene object.
+    // requires_item at scene level is a schema violation
     if (scene.requires_item != null) {
       warn(
         `Scene '${sceneId}' has 'requires_item' at scene level — this field is only read on choices and will be silently ignored.`
@@ -232,6 +255,8 @@ export function validateCampaign(campaign) {
         err(`${prefix}: 'next' refers to unknown scene: '${nextId}'`);
       }
 
+      checkAffectAttributes(choice, prefix);
+
       // Collect item names for advisory checks
       if (choice.requires_item) allItemNamesUsed.add(choice.requires_item);
       for (const item of choice.requires_items ?? []) allItemNamesUsed.add(item);
@@ -247,6 +272,7 @@ export function validateCampaign(campaign) {
 
     // Collect from on_enter too
     const onEnter = scene.on_enter ?? {};
+    checkAffectAttributes(onEnter, `Scene '${sceneId}' on_enter`);
     for (const item of onEnter.gives_items ?? []) {
       allItemNamesUsed.add(item);
       allGrantedItems.add(item);
@@ -255,6 +281,30 @@ export function validateCampaign(campaign) {
       allItemNamesUsed.add(item);
       allRemovedItems.add(item);
     }
+  }
+
+  // ── Check items affect_attributes references ──────────────────────────────
+
+  for (const [itemName, item] of Object.entries(itemsRegistry)) {
+    const affects = item?.affect_attributes ?? {};
+    for (const attrName of Object.keys(affects)) {
+      if (!(attrName in attrDefs)) {
+        warn(`Item '${itemName}': 'affect_attributes' references unknown attribute '${attrName}'.`);
+      }
+    }
+  }
+
+  // ── Warn if affect_attributes is used but no attributes are defined ────────
+
+  const hasAnyAffects = (
+    Object.values(itemsRegistry).some(item => Object.keys(item?.affect_attributes ?? {}).length > 0) ||
+    Object.values(scenes).some(scene => {
+      if (scene.on_enter?.affect_attributes && Object.keys(scene.on_enter.affect_attributes).length > 0) return true;
+      return (scene.choices ?? []).some(c => Object.keys(c.affect_attributes ?? {}).length > 0);
+    })
+  );
+  if (hasAnyAffects && Object.keys(attrDefs).length === 0) {
+    warn("'affect_attributes' is used but no attributes are defined in metadata.attributes.");
   }
 
   // ── Reachability check (BFS from start) ──────────────────────────────────

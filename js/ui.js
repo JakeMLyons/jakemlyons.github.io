@@ -33,8 +33,8 @@ let launchedFromDashboard = false;
 // Tracks whether the journal has been auto-expanded at least once this session
 let journalAutoExpanded = false;
 
-// Tracks last rendered health value to detect changes for animation
-let lastRenderedHealth = null;
+// Tracks last rendered attribute values to detect changes for animation
+let lastRenderedAttributes = {};
 
 // Prevents double-submission of choices
 let stepping = false;
@@ -60,12 +60,7 @@ const sceneText       = document.getElementById('scene-text');
 const sceneChoices    = document.getElementById('scene-choices');
 
 const inventoryList   = document.getElementById('inventory-list');
-const hudHealth       = document.getElementById('hud-health');
-const healthValue     = document.getElementById('health-value');
-const hudArmor        = document.getElementById('hud-armor');
-const armorValue      = document.getElementById('armor-value');
-const hudCarry        = document.getElementById('hud-carry');
-const carryValue      = document.getElementById('carry-value');
+const hudAttributes   = document.getElementById('hud-attributes');
 
 const journalToggle   = document.getElementById('journal-toggle');
 const journalArrow    = document.getElementById('journal-arrow');
@@ -263,7 +258,7 @@ function renderChoicesOrTerminal(output) {
       if (output.terminalReason === 'end') {
         msg.textContent = 'The End.';
       } else {
-        msg.textContent = 'You have died. Game over.';
+        msg.textContent = output.deathMessage ?? 'You have died.';
       }
       term.appendChild(msg);
 
@@ -318,9 +313,7 @@ function renderChoicesOrTerminal(output) {
 
 function renderHUD(state) {
   renderInventory(state);
-  renderHealth(state);
-  renderArmor(state);
-  renderCarryWeight(state);
+  renderAttributes(state);
   renderJournal(state);
   renderMap(state);
   if (mapContent.classList.contains('hud-collapsible__content--expanded')) {
@@ -345,7 +338,9 @@ function renderInventory(state) {
     const li = document.createElement('li');
     li.className = 'inventory-item';
 
-    const hasDescription = itemName in (campaign?.items ?? {});
+    const itemEntry = campaign?.items?.[itemName];
+    const hasDescription = itemEntry != null;
+    const itemDesc = typeof itemEntry === 'string' ? itemEntry : (itemEntry?.description ?? '');
 
     if (hasDescription) {
       const btn = document.createElement('button');
@@ -358,7 +353,7 @@ function renderInventory(state) {
       btn.addEventListener('click', () => {
         descDiv.classList.toggle('item-description--visible');
         if (descDiv.classList.contains('item-description--visible') && !descDiv.textContent) {
-          descDiv.textContent = campaign.items[itemName] || 'No further description.';
+          descDiv.textContent = itemDesc || 'No further description.';
         }
       });
 
@@ -375,43 +370,48 @@ function renderInventory(state) {
   }
 }
 
-function renderHealth(state) {
-  if (state.health === null) {
-    hudHealth.classList.add('hidden');
-    lastRenderedHealth = null;
-  } else {
-    hudHealth.classList.remove('hidden');
-    const max = state.maxHealth !== null ? ` / ${state.maxHealth}` : '';
-    healthValue.textContent = `${state.health}${max}`;
+function renderAttributes(state) {
+  const attrDefs = campaign?.metadata?.attributes ?? {};
+  const attrEntries = Object.entries(attrDefs);
 
-    if (lastRenderedHealth !== null && state.health !== lastRenderedHealth) {
-      const cls = state.health < lastRenderedHealth ? 'hud-health--damage' : 'hud-health--heal';
-      hudHealth.classList.remove('hud-health--damage', 'hud-health--heal');
-      void hudHealth.offsetWidth; // reflow to re-trigger animation
-      hudHealth.classList.add(cls);
+  if (attrEntries.length === 0) {
+    hudAttributes.classList.add('hidden');
+    return;
+  }
+
+  hudAttributes.classList.remove('hidden');
+  hudAttributes.innerHTML = '';
+
+  for (const [attrName, def] of attrEntries) {
+    const val = state.attributes?.[attrName] ?? 0;
+    const label = def.label || attrName;
+
+    const section = document.createElement('div');
+    section.className = 'hud-section hud-attr-row';
+    section.dataset.attr = attrName;
+
+    const labelDiv = document.createElement('div');
+    labelDiv.className = 'hud-section__label';
+    labelDiv.textContent = label;
+    section.appendChild(labelDiv);
+
+    const valueDiv = document.createElement('div');
+    valueDiv.className = 'hud-section__value';
+    const maxStr = def.max != null ? ` / ${def.max}` : '';
+    valueDiv.textContent = `${val}${maxStr}`;
+    section.appendChild(valueDiv);
+
+    // Change animation
+    const prev = lastRenderedAttributes[attrName];
+    if (prev != null && val !== prev) {
+      const cls = val < prev ? 'hud-attr--damage' : 'hud-attr--heal';
+      section.classList.add(cls);
     }
-    lastRenderedHealth = state.health;
-  }
-}
 
-function renderArmor(state) {
-  if (!state.armor) {
-    hudArmor.classList.add('hidden');
-  } else {
-    hudArmor.classList.remove('hidden');
-    armorValue.textContent = String(state.armor);
+    hudAttributes.appendChild(section);
   }
-}
 
-function renderCarryWeight(state) {
-  if (state.maxCarryWeight === null) {
-    hudCarry.classList.add('hidden');
-  } else {
-    hudCarry.classList.remove('hidden');
-    const weights = campaign?.itemWeights ?? {};
-    const current = state.inventory.reduce((sum, item) => sum + Number(weights[item] ?? 0), 0);
-    carryValue.textContent = `${current} / ${state.maxCarryWeight}`;
-  }
+  lastRenderedAttributes = { ...state.attributes };
 }
 
 function renderJournal(state) {

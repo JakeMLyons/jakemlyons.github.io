@@ -1,9 +1,8 @@
 /**
  * state.js — Core data structures for the adventure engine.
  *
- * Direct JS port of adventure/state.py.
  * PlayerState fields use camelCase internally; toDict() serialises to
- * snake_case to match the Python-compatible save file format.
+ * snake_case to match the save file format.
  */
 
 export class PlayerState {
@@ -11,33 +10,24 @@ export class PlayerState {
    * @param {object} opts
    * @param {string} opts.sceneId
    * @param {string[]} [opts.inventory]
-   * @param {number|null} [opts.health]
-   * @param {number|null} [opts.maxHealth]
-   * @param {number} [opts.armor]
-   * @param {number|null} [opts.maxCarryWeight]
+   * @param {Record<string,number>} [opts.attributes]
    * @param {string[]} [opts.visited]
    * @param {string[]} [opts.notes]
    */
-  constructor({ sceneId, inventory = [], health = null, maxHealth = null, armor = 0, maxCarryWeight = null, visited = [], notes = [] }) {
+  constructor({ sceneId, inventory = [], attributes = {}, visited = [], notes = [] }) {
     this.sceneId = sceneId;
     this.inventory = inventory;
-    this.health = health;
-    this.maxHealth = maxHealth;
-    this.armor = armor;
-    this.maxCarryWeight = maxCarryWeight;
+    this.attributes = attributes; // { health: 20, carry_weight: 0, ... }
     this.visited = visited;
     this.notes = notes;
   }
 
-  /** Returns an independent shallow copy — all arrays cloned. */
+  /** Returns an independent shallow copy — all arrays and objects cloned. */
   copy() {
     return new PlayerState({
       sceneId: this.sceneId,
       inventory: [...this.inventory],
-      health: this.health,
-      maxHealth: this.maxHealth,
-      armor: this.armor,
-      maxCarryWeight: this.maxCarryWeight,
+      attributes: { ...this.attributes },
       visited: [...this.visited],
       notes: [...this.notes],
     });
@@ -48,10 +38,7 @@ export class PlayerState {
     return {
       scene_id: this.sceneId,
       inventory: [...this.inventory],
-      health: this.health,
-      max_health: this.maxHealth,
-      armor: this.armor,
-      max_carry_weight: this.maxCarryWeight,
+      attributes: { ...this.attributes },
       visited: [...this.visited],
       notes: [...this.notes],
     };
@@ -68,10 +55,7 @@ export class PlayerState {
     return new PlayerState({
       sceneId: data.scene_id,
       inventory: [...(data.inventory ?? [])],
-      health: data.health ?? null,
-      maxHealth: data.max_health ?? null,
-      armor: data.armor ?? 0,
-      maxCarryWeight: data.max_carry_weight ?? null,
+      attributes: { ...(data.attributes ?? {}) },
       visited: [...(data.visited ?? [])],
       notes: [...(data.notes ?? [])],
     });
@@ -79,22 +63,21 @@ export class PlayerState {
 
   /**
    * Builds the default starting state from campaign metadata.
+   * Initialises each attribute to its declared starting value.
    * @param {object} campaign - { metadata, scenes, items }
    * @returns {PlayerState}
    */
   static fromCampaign(campaign) {
-    const def = campaign.metadata?.default_player_state ?? {};
-    const rawHealth = def.health;
-    const rawMaxHealth = def.max_health;
-    const rawArmor = def.armor;
-    const rawMaxCarry = def.max_carry_weight;
+    const meta = campaign.metadata ?? {};
+    const attrDefs = meta.attributes ?? {};
+    const attributes = {};
+    for (const [name, def] of Object.entries(attrDefs)) {
+      attributes[name] = Number(def.value ?? 0);
+    }
     return new PlayerState({
-      sceneId: campaign.metadata.start,
-      inventory: [...(def.inventory ?? [])],
-      health: rawHealth != null ? Number(rawHealth) : null,
-      maxHealth: rawMaxHealth != null ? Number(rawMaxHealth) : null,
-      armor: rawArmor != null ? Number(rawArmor) : 0,
-      maxCarryWeight: rawMaxCarry != null ? Number(rawMaxCarry) : null,
+      sceneId: meta.start,
+      inventory: [...(meta.inventory ?? [])],
+      attributes,
     });
   }
 }
@@ -109,6 +92,7 @@ export class GameOutput {
    * @param {boolean} [opts.isTerminal]
    * @param {'end'|'death'|null} [opts.terminalReason]
    * @param {boolean} [opts.noChoices]
+   * @param {string|null} [opts.deathMessage]
    */
   constructor({
     state,
@@ -118,6 +102,7 @@ export class GameOutput {
     isTerminal = false,
     terminalReason = null,
     noChoices = false,
+    deathMessage = null,
   }) {
     this.state = state;
     this.sceneText = sceneText;
@@ -126,5 +111,6 @@ export class GameOutput {
     this.isTerminal = isTerminal;
     this.terminalReason = terminalReason;
     this.noChoices = noChoices;
+    this.deathMessage = deathMessage; // min_message from attribute that triggered death
   }
 }

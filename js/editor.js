@@ -93,14 +93,8 @@ const edMetaVersion        = document.getElementById('ed-meta-version');
 const edMetaDesc           = document.getElementById('ed-meta-description');
 const edMetaTagsCtr        = document.getElementById('ed-meta-tags-container');
 const edMetaStart          = document.getElementById('ed-meta-start');
-const edMetaHealthEnabled  = document.getElementById('ed-meta-health-enabled');
-const edMetaHealth         = document.getElementById('ed-meta-health');
-const edMetaMaxHealthEnabled = document.getElementById('ed-meta-max-health-enabled');
-const edMetaMaxHealth      = document.getElementById('ed-meta-max-health');
-const edMetaArmorEnabled   = document.getElementById('ed-meta-armor-enabled');
-const edMetaArmor          = document.getElementById('ed-meta-armor');
-const edMetaMaxCarryEnabled = document.getElementById('ed-meta-max-carry-enabled');
-const edMetaMaxCarry       = document.getElementById('ed-meta-max-carry');
+const edMetaAttrsList      = document.getElementById('ed-meta-attributes-list');
+const edMetaAddAttr        = document.getElementById('ed-meta-add-attr');
 const edMetaInvCtr         = document.getElementById('ed-meta-inventory-container');
 
 // Scene form fields
@@ -110,9 +104,8 @@ const edSceneTitle    = document.getElementById('ed-scene-title');
 const edSceneText     = document.getElementById('ed-scene-text');
 const edSceneTerminal = document.getElementById('ed-scene-terminal');
 const edOnEnterDetails = document.getElementById('ed-on-enter-details');
-const edOeMessage     = document.getElementById('ed-oe-message');
-const edOeDamage      = document.getElementById('ed-oe-damage');
-const edOeHeal        = document.getElementById('ed-oe-heal');
+const edOeMessage         = document.getElementById('ed-oe-message');
+const edOeAffectAttrsCtr  = document.getElementById('ed-oe-affect-attrs-container');
 const edOeGivesItemsCtr   = document.getElementById('ed-oe-gives-items-container');
 const edOeRemovesItemsCtr = document.getElementById('ed-oe-removes-items-container');
 const edOeGivesNotesCtr   = document.getElementById('ed-oe-gives-notes-container');
@@ -123,6 +116,10 @@ const edChoicesList    = document.getElementById('ed-choices-list');
 // Items form
 const edItemsList  = document.getElementById('ed-items-list');
 const edAddItem    = document.getElementById('ed-add-item');
+
+// Attributes form
+const edAttributesNav  = document.getElementById('ed-attributes-nav');
+const edAttributesForm = document.getElementById('ed-attributes-form');
 
 // Recipes form
 const edRecipesNav  = document.getElementById('ed-recipes-nav');
@@ -198,7 +195,7 @@ function tryLocalStorageHandoff() {
   localStorage.removeItem('adventure_editor_draft');
   try {
     const data = JSON.parse(raw);
-    if (data?.campaign) receiveCampaignData(data.campaign, data.name ?? '');
+    if (data?.campaign) receiveCampaignData(data.campaign, data.name ?? '', data.files ?? null);
     else showBlank();
   } catch {
     showBlank();
@@ -230,11 +227,20 @@ function showShell() {
 
 /**
  * Receive a parsed campaign object (from dashboard handoff or new-campaign scaffold).
- * Synthesises an initial file map via serialiseCampaign, then opens the editor shell.
+ * When files (array of {path,text}) are provided, builds the fileMap from the original
+ * file texts to preserve the author's multi-file layout. Otherwise synthesises via serialiseCampaign.
  */
-function receiveCampaignData(campaignObj, name) {
+function receiveCampaignData(campaignObj, name, files) {
   campaign = campaignObj;
-  fileMap = serialiseCampaign(campaignObj, null);
+  if (files && files.length > 0) {
+    fileMap = new Map();
+    for (const { path, text } of files) {
+      const filename = path.includes('/') ? path.split('/').pop() : path;
+      fileMap.set(filename, text);
+    }
+  } else {
+    fileMap = serialiseCampaign(campaignObj, null);
+  }
   codeEdited = false;
   warningAcknowledged = false;
   activeScene = null;
@@ -793,81 +799,20 @@ function wireVisualPane() {
     renderSceneList(); // update ▶ marker
     scheduleValidation();
   });
-  edMetaHealthEnabled.addEventListener('change', () => {
-    const enabled = edMetaHealthEnabled.checked;
-    edMetaHealth.classList.toggle('hidden', !enabled);
-    if (!campaign.metadata.default_player_state) campaign.metadata.default_player_state = {};
-    if (enabled) {
-      campaign.metadata.default_player_state.health = Number(edMetaHealth.value) || 100;
-      if (!edMetaHealth.value) edMetaHealth.value = String(campaign.metadata.default_player_state.health);
-    } else {
-      delete campaign.metadata.default_player_state.health;
-      edMetaHealth.value = '';
-    }
+  edMetaAddAttr.addEventListener('click', () => {
+    if (!campaign.metadata.attributes) campaign.metadata.attributes = {};
+    let n = 1;
+    while (campaign.metadata.attributes[`attr_${n}`] !== undefined) n++;
+    const name = `attr_${n}`;
+    campaign.metadata.attributes[name] = { value: 0 };
+    renderAttributesEditor();
     scheduleValidation();
-  });
-  edMetaHealth.addEventListener('input', () => {
-    if (!campaign.metadata.default_player_state) campaign.metadata.default_player_state = {};
-    campaign.metadata.default_player_state.health = Number(edMetaHealth.value) || 0;
-    scheduleValidation();
-  });
-  edMetaMaxHealthEnabled.addEventListener('change', () => {
-    const enabled = edMetaMaxHealthEnabled.checked;
-    edMetaMaxHealth.classList.toggle('hidden', !enabled);
-    if (!campaign.metadata.default_player_state) campaign.metadata.default_player_state = {};
-    if (enabled) {
-      campaign.metadata.default_player_state.max_health = Number(edMetaMaxHealth.value) || 100;
-      if (!edMetaMaxHealth.value) edMetaMaxHealth.value = String(campaign.metadata.default_player_state.max_health);
-    } else {
-      delete campaign.metadata.default_player_state.max_health;
-      edMetaMaxHealth.value = '';
-    }
-    markDirty();
-  });
-  edMetaMaxHealth.addEventListener('input', () => {
-    if (!campaign.metadata.default_player_state) campaign.metadata.default_player_state = {};
-    campaign.metadata.default_player_state.max_health = edMetaMaxHealth.value !== '' ? Number(edMetaMaxHealth.value) : undefined;
-    markDirty();
-  });
-  edMetaArmorEnabled.addEventListener('change', () => {
-    const enabled = edMetaArmorEnabled.checked;
-    edMetaArmor.classList.toggle('hidden', !enabled);
-    if (!campaign.metadata.default_player_state) campaign.metadata.default_player_state = {};
-    if (enabled) {
-      campaign.metadata.default_player_state.armor = Number(edMetaArmor.value) || 0;
-      if (!edMetaArmor.value) edMetaArmor.value = String(campaign.metadata.default_player_state.armor);
-    } else {
-      delete campaign.metadata.default_player_state.armor;
-      edMetaArmor.value = '';
-    }
-    markDirty();
-  });
-  edMetaArmor.addEventListener('input', () => {
-    if (!campaign.metadata.default_player_state) campaign.metadata.default_player_state = {};
-    campaign.metadata.default_player_state.armor = edMetaArmor.value !== '' ? Number(edMetaArmor.value) : undefined;
-    markDirty();
-  });
-  edMetaMaxCarryEnabled.addEventListener('change', () => {
-    const enabled = edMetaMaxCarryEnabled.checked;
-    edMetaMaxCarry.classList.toggle('hidden', !enabled);
-    if (!campaign.metadata.default_player_state) campaign.metadata.default_player_state = {};
-    if (enabled) {
-      campaign.metadata.default_player_state.max_carry_weight = Number(edMetaMaxCarry.value) || 0;
-      if (!edMetaMaxCarry.value) edMetaMaxCarry.value = String(campaign.metadata.default_player_state.max_carry_weight);
-    } else {
-      delete campaign.metadata.default_player_state.max_carry_weight;
-      edMetaMaxCarry.value = '';
-    }
-    markDirty();
-  });
-  edMetaMaxCarry.addEventListener('input', () => {
-    if (!campaign.metadata.default_player_state) campaign.metadata.default_player_state = {};
-    campaign.metadata.default_player_state.max_carry_weight = edMetaMaxCarry.value !== '' ? Number(edMetaMaxCarry.value) : undefined;
     markDirty();
   });
 
   // Scene list controls
   edMetaNav.addEventListener('click', showMetadataForm);
+  edAttributesNav.addEventListener('click', showAttributesForm);
   edScenesNav.addEventListener('click', showScenesView);
   edAddSceneBtn.addEventListener('click', addScene);
   edItemsNav.addEventListener('click', showItemsForm);
@@ -894,8 +839,6 @@ function wireVisualPane() {
 
   // on_enter fields
   edOeMessage.addEventListener('input', () => writeOnEnterField('message', edOeMessage.value || undefined));
-  edOeDamage.addEventListener('input', () => writeOnEnterField('damage', edOeDamage.value ? Number(edOeDamage.value) : undefined));
-  edOeHeal.addEventListener('input', () => writeOnEnterField('heal', edOeHeal.value ? Number(edOeHeal.value) : undefined));
 
   // Add choice button
   edAddChoiceBtn.addEventListener('click', addChoice);
@@ -908,7 +851,6 @@ function wireVisualPane() {
 
 function populateMetadataForm() {
   const meta = campaign.metadata ?? {};
-  const dps  = meta.default_player_state ?? {};
 
   edMetaTitle.value   = meta.title ?? '';
   edMetaAuthor.value  = meta.author ?? '';
@@ -925,35 +867,10 @@ function populateMetadataForm() {
   populateStartSelect();
   edMetaStart.value = meta.start ?? '';
 
-  // Health toggle
-  const hasHealth = dps.health != null;
-  edMetaHealthEnabled.checked = hasHealth;
-  edMetaHealth.classList.toggle('hidden', !hasHealth);
-  edMetaHealth.value = hasHealth ? Number(dps.health) : '';
-
-  // Max health toggle
-  const hasMaxHealth = dps.max_health != null;
-  edMetaMaxHealthEnabled.checked = hasMaxHealth;
-  edMetaMaxHealth.classList.toggle('hidden', !hasMaxHealth);
-  edMetaMaxHealth.value = hasMaxHealth ? Number(dps.max_health) : '';
-
-  // Armor toggle
-  const hasArmor = dps.armor != null;
-  edMetaArmorEnabled.checked = hasArmor;
-  edMetaArmor.classList.toggle('hidden', !hasArmor);
-  edMetaArmor.value = hasArmor ? Number(dps.armor) : '';
-
-  // Carry weight toggle
-  const hasMaxCarry = dps.max_carry_weight != null;
-  edMetaMaxCarryEnabled.checked = hasMaxCarry;
-  edMetaMaxCarry.classList.toggle('hidden', !hasMaxCarry);
-  edMetaMaxCarry.value = hasMaxCarry ? Number(dps.max_carry_weight) : '';
-
   // Inventory pill input
   edMetaInvCtr.innerHTML = '';
-  makePillInput(edMetaInvCtr, dps.inventory ?? [], (items) => {
-    if (!campaign.metadata.default_player_state) campaign.metadata.default_player_state = {};
-    campaign.metadata.default_player_state.inventory = items.length ? items : undefined;
+  makePillInput(edMetaInvCtr, meta.inventory ?? [], (items) => {
+    campaign.metadata.inventory = items.length ? items : undefined;
   }, 'ed-item-datalist');
 }
 
@@ -1218,11 +1135,13 @@ function selectScene(sceneId) {
   }
   // Activate Scenes nav, deactivate others
   edScenesNav.classList.add('ed-nav-section__hdr--active');
+  edAttributesNav.classList.remove('ed-nav-section__hdr--active');
   edItemsNav.classList.remove('ed-nav-section__hdr--active');
   edRecipesNav.classList.remove('ed-nav-section__hdr--active');
   edMetaNav.classList.remove('ed-nav-section__hdr--active');
   // Show only scene form
   edMetaForm.classList.add('hidden');
+  edAttributesForm.classList.add('hidden');
   edSceneForm.classList.remove('hidden');
   edItemsForm.classList.add('hidden');
   edRecipesForm.classList.add('hidden');
@@ -1233,6 +1152,7 @@ function selectScene(sceneId) {
 function showScenesView() {
   activeScene = null;
   edScenesNav.classList.add('ed-nav-section__hdr--active');
+  edAttributesNav.classList.remove('ed-nav-section__hdr--active');
   edMetaNav.classList.remove('ed-nav-section__hdr--active');
   edItemsNav.classList.remove('ed-nav-section__hdr--active');
   edRecipesNav.classList.remove('ed-nav-section__hdr--active');
@@ -1240,6 +1160,7 @@ function showScenesView() {
     li.classList.remove('ed-scenelist__item--active');
   }
   edMetaForm.classList.add('hidden');
+  edAttributesForm.classList.add('hidden');
   edSceneForm.classList.add('hidden');
   edItemsForm.classList.add('hidden');
   edRecipesForm.classList.add('hidden');
@@ -1250,11 +1171,13 @@ function showScenesView() {
 function showMetadataForm() {
   activeScene = null;
   edSceneForm.classList.add('hidden');
+  edAttributesForm.classList.add('hidden');
   edItemsForm.classList.add('hidden');
   edRecipesForm.classList.add('hidden');
   edSceneGraph.classList.add('hidden');
   edMetaForm.classList.remove('hidden');
   edScenesNav.classList.remove('ed-nav-section__hdr--active');
+  edAttributesNav.classList.remove('ed-nav-section__hdr--active');
   edItemsNav.classList.remove('ed-nav-section__hdr--active');
   edRecipesNav.classList.remove('ed-nav-section__hdr--active');
   edMetaNav.classList.add('ed-nav-section__hdr--active');
@@ -1262,6 +1185,25 @@ function showMetadataForm() {
     li.classList.remove('ed-scenelist__item--active');
   }
   refreshItemDatalist();
+}
+
+function showAttributesForm() {
+  activeScene = null;
+  edMetaNav.classList.remove('ed-nav-section__hdr--active');
+  edScenesNav.classList.remove('ed-nav-section__hdr--active');
+  edItemsNav.classList.remove('ed-nav-section__hdr--active');
+  edRecipesNav.classList.remove('ed-nav-section__hdr--active');
+  edAttributesNav.classList.add('ed-nav-section__hdr--active');
+  for (const li of edScenelistList.querySelectorAll('.ed-scenelist__item')) {
+    li.classList.remove('ed-scenelist__item--active');
+  }
+  edMetaForm.classList.add('hidden');
+  edSceneForm.classList.add('hidden');
+  edItemsForm.classList.add('hidden');
+  edRecipesForm.classList.add('hidden');
+  edSceneGraph.classList.add('hidden');
+  edAttributesForm.classList.remove('hidden');
+  renderAttributesEditor();
 }
 
 function addScene() {
@@ -1318,13 +1260,16 @@ function renderSceneForm(sceneId) {
 
   // on_enter
   const oe = scene.on_enter ?? {};
-  const oeHasContent = !!(oe.message || oe.damage || oe.heal ||
+  const oeHasContent = !!(oe.message ||
+    (oe.affect_attributes && Object.keys(oe.affect_attributes).length > 0) ||
     oe.gives_items?.length || oe.removes_items?.length || oe.gives_notes?.length);
   edOnEnterDetails.open = oeHasContent;
 
   edOeMessage.value = oe.message ?? '';
-  edOeDamage.value  = oe.damage  ? String(Number(oe.damage))  : '';
-  edOeHeal.value    = oe.heal    ? String(Number(oe.heal))    : '';
+
+  makeAffectAttributesEditor(edOeAffectAttrsCtr, oe.affect_attributes, (val) => {
+    writeOnEnterField('affect_attributes', val);
+  });
 
   edOeGivesItemsCtr.innerHTML = '';
   makePillInput(edOeGivesItemsCtr, oe.gives_items ?? [], (items) => {
@@ -1568,21 +1513,13 @@ function buildChoiceCard(sceneId, index) {
   });
   addField('Gives notes', givesNotesCtr);
 
-  // Damage
-  const dmgInput = makeInput('number', choice.damage ? String(Number(choice.damage)) : '', '0');
-  dmgInput.min = '0';
-  dmgInput.addEventListener('input', () => {
-    choice.damage = dmgInput.value ? Number(dmgInput.value) : undefined;
+  // Affect attributes
+  const aaCtr = document.createElement('div');
+  aaCtr.className = 'ed-affect-attrs-editor';
+  makeAffectAttributesEditor(aaCtr, choice.affect_attributes, (val) => {
+    choice.affect_attributes = val;
   });
-  addField('Damage', dmgInput);
-
-  // Heal
-  const healInput = makeInput('number', choice.heal ? String(Number(choice.heal)) : '', '0');
-  healInput.min = '0';
-  healInput.addEventListener('input', () => {
-    choice.heal = healInput.value ? Number(healInput.value) : undefined;
-  });
-  addField('Heal', healInput);
+  addField('Affect attributes', aaCtr);
 
   body.appendChild(grid);
   card.appendChild(header);
@@ -1612,6 +1549,7 @@ function moveChoice(sceneId, from, to) {
 function showItemsForm() {
   activeScene = null;
   edItemsNav.classList.add('ed-nav-section__hdr--active');
+  edAttributesNav.classList.remove('ed-nav-section__hdr--active');
   edScenesNav.classList.remove('ed-nav-section__hdr--active');
   edRecipesNav.classList.remove('ed-nav-section__hdr--active');
   edMetaNav.classList.remove('ed-nav-section__hdr--active');
@@ -1619,6 +1557,7 @@ function showItemsForm() {
     li.classList.remove('ed-scenelist__item--active');
   }
   edMetaForm.classList.add('hidden');
+  edAttributesForm.classList.add('hidden');
   edSceneForm.classList.add('hidden');
   edRecipesForm.classList.add('hidden');
   edSceneGraph.classList.add('hidden');
@@ -1652,39 +1591,45 @@ function collectUsedItems() {
     for (const i of oe.gives_items ?? []) used.add(i);
     for (const i of oe.removes_items ?? []) used.add(i);
   }
-  for (const i of campaign.metadata?.default_player_state?.inventory ?? []) used.add(i);
+  for (const i of campaign.metadata?.inventory ?? []) used.add(i);
   return used;
 }
 
-function buildItemRow(itemName, itemDesc, usedItems) {
+function buildItemRow(itemName, itemData, usedItems) {
+  const entry = document.createElement('div');
+  entry.className = 'ed-item-entry';
+
+  // Main row: name | desc | warn | delete
   const row = document.createElement('div');
   row.className = 'ed-item-row';
 
   const nameInput = makeInput('text', itemName, 'item name');
   nameInput.className += ' ed-item-row__name';
 
-  const descInput = makeInput('text', itemDesc ?? '', 'description');
+  const descInput = makeInput('text', itemData?.description ?? '', 'description');
   descInput.className += ' ed-item-row__desc';
 
-  // Update item in campaign on name change (key rename)
   let currentName = itemName;
   nameInput.addEventListener('change', () => {
     const newName = nameInput.value.trim();
     if (!newName || newName === currentName) return;
     if (campaign.items[newName]) {
-      nameInput.value = currentName; // revert
+      nameInput.value = currentName;
       return;
     }
-    const desc = campaign.items[currentName];
+    const data = campaign.items[currentName];
     delete campaign.items[currentName];
-    campaign.items[newName] = desc;
+    campaign.items[newName] = data;
     currentName = newName;
     renderItemsView();
     scheduleValidation();
   });
 
   descInput.addEventListener('input', () => {
-    campaign.items[currentName] = descInput.value;
+    if (!campaign.items[currentName] || typeof campaign.items[currentName] !== 'object') {
+      campaign.items[currentName] = { description: '', affect_attributes: {} };
+    }
+    campaign.items[currentName].description = descInput.value;
   });
 
   const delBtn = document.createElement('button');
@@ -1709,15 +1654,128 @@ function buildItemRow(itemName, itemDesc, usedItems) {
   }
 
   row.appendChild(delBtn);
-  return row;
+  entry.appendChild(row);
+
+  // Affect attributes section — only show entries already set + inline "add" button in main row
+  const attrDefs = campaign.metadata?.attributes ?? {};
+  const attrDefNames = Object.keys(attrDefs);
+  if (attrDefNames.length > 0) {
+    const aaSection = document.createElement('div');
+    aaSection.className = 'ed-item-row__attrs';
+    const current = Object.assign({}, itemData?.affect_attributes ?? {});
+
+    // "Add" button lives in the main row, before the delete button
+    const addAttrBtn = document.createElement('button');
+    addAttrBtn.className = 'btn btn--ghost btn--small ed-item-row__addattr';
+    addAttrBtn.textContent = '+ attr';
+    addAttrBtn.title = 'Add attribute effect';
+
+    function syncAttrs() {
+      if (!campaign.items[currentName] || typeof campaign.items[currentName] !== 'object') {
+        campaign.items[currentName] = { description: descInput.value, affect_attributes: {} };
+      }
+      campaign.items[currentName].affect_attributes = { ...current };
+    }
+
+    function updateAddBtn() {
+      const remaining = attrDefNames.filter(n => !(n in current));
+      addAttrBtn.style.display = remaining.length > 0 ? '' : 'none';
+    }
+
+    function rebuildAttrs() {
+      aaSection.innerHTML = '';
+      // One row per attribute already set on this item
+      for (const attrName of Object.keys(current)) {
+        const def = attrDefs[attrName];
+        if (!def) continue; // campaign attr deleted; skip
+        const attrRow = document.createElement('div');
+        attrRow.className = 'ed-item-attr-row';
+        const lbl = document.createElement('span');
+        lbl.className = 'ed-item-attr-row__label';
+        lbl.textContent = (def.label || attrName) + ':';
+        const numInput = makeInput('number', String(Number(current[attrName] ?? 0)), '0');
+        numInput.className += ' ed-item-attr-row__input';
+        numInput.addEventListener('input', () => {
+          current[attrName] = Number(numInput.value) || 0;
+          syncAttrs();
+          markDirty();
+        });
+        const rmBtn = document.createElement('button');
+        rmBtn.className = 'ed-item-attr-row__remove';
+        rmBtn.textContent = '✕';
+        rmBtn.title = 'Remove effect';
+        rmBtn.addEventListener('click', () => {
+          delete current[attrName];
+          syncAttrs();
+          rebuildAttrs();
+          markDirty();
+        });
+        attrRow.appendChild(lbl);
+        attrRow.appendChild(numInput);
+        attrRow.appendChild(rmBtn);
+        aaSection.appendChild(attrRow);
+      }
+      updateAddBtn();
+    }
+
+    addAttrBtn.addEventListener('click', () => {
+      const remaining = attrDefNames.filter(n => !(n in current));
+      if (remaining.length === 0) return;
+      if (remaining.length === 1) {
+        // Only one option — add it directly
+        current[remaining[0]] = 0;
+        syncAttrs();
+        rebuildAttrs();
+        markDirty();
+      } else {
+        // Multiple options — show a picker in aaSection (dismiss any existing one)
+        aaSection.querySelector('.ed-item-attr-pick')?.remove();
+        const picker = document.createElement('div');
+        picker.className = 'ed-item-attr-add ed-item-attr-pick';
+        const sel = document.createElement('select');
+        sel.className = 'ed-select ed-select--small';
+        for (const n of remaining) {
+          const opt = document.createElement('option');
+          opt.value = n;
+          opt.textContent = attrDefs[n].label || n;
+          sel.appendChild(opt);
+        }
+        const confirmBtn = document.createElement('button');
+        confirmBtn.className = 'btn btn--ghost btn--small';
+        confirmBtn.textContent = 'Add';
+        confirmBtn.addEventListener('click', () => {
+          const n = sel.value;
+          if (n && !(n in current)) {
+            current[n] = 0;
+            syncAttrs();
+            rebuildAttrs();
+            markDirty();
+          }
+        });
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'btn btn--ghost btn--small';
+        cancelBtn.textContent = '✕';
+        cancelBtn.addEventListener('click', () => picker.remove());
+        picker.appendChild(sel);
+        picker.appendChild(confirmBtn);
+        picker.appendChild(cancelBtn);
+        aaSection.appendChild(picker);
+      }
+    });
+
+    rebuildAttrs();
+    row.insertBefore(addAttrBtn, delBtn);
+    entry.appendChild(aaSection);
+  }
+
+  return entry;
 }
 
 function addItemRow() {
   if (!campaign.items) campaign.items = {};
-  // Find a unique placeholder name
   let n = 1;
   while (campaign.items[`new_item_${n}`] !== undefined) n++;
-  campaign.items[`new_item_${n}`] = '';
+  campaign.items[`new_item_${n}`] = { description: '', affect_attributes: {} };
   renderItemsView();
 }
 
@@ -1726,6 +1784,7 @@ function addItemRow() {
 function showRecipesForm() {
   activeScene = null;
   edRecipesNav.classList.add('ed-nav-section__hdr--active');
+  edAttributesNav.classList.remove('ed-nav-section__hdr--active');
   edItemsNav.classList.remove('ed-nav-section__hdr--active');
   edScenesNav.classList.remove('ed-nav-section__hdr--active');
   edMetaNav.classList.remove('ed-nav-section__hdr--active');
@@ -1733,6 +1792,7 @@ function showRecipesForm() {
     li.classList.remove('ed-scenelist__item--active');
   }
   edMetaForm.classList.add('hidden');
+  edAttributesForm.classList.add('hidden');
   edSceneForm.classList.add('hidden');
   edItemsForm.classList.add('hidden');
   edSceneGraph.classList.add('hidden');
@@ -1820,6 +1880,224 @@ function addRecipeRow() {
   campaign.recipes.push({ inputs: [], output: '' });
   renderRecipesView();
   markDirty();
+}
+
+// ─── Visual mode: attributes registry editor ──────────────────────────────────
+
+function renderAttributesEditor() {
+  edMetaAttrsList.innerHTML = '';
+  const attrs = campaign.metadata?.attributes ?? {};
+  for (const [attrName, attrDef] of Object.entries(attrs)) {
+    edMetaAttrsList.appendChild(buildAttributeCard(attrName, attrDef));
+  }
+}
+
+function buildAttributeCard(attrName, attrDef) {
+  const card = document.createElement('div');
+  card.className = 'ed-attr-card';
+
+  // Name row
+  const nameRow = document.createElement('div');
+  nameRow.className = 'ed-attr-card__name-row';
+
+  let currentName = attrName;
+  const nameInput = makeInput('text', attrName, 'attribute_name');
+  nameInput.className += ' ed-attr-card__name';
+  nameInput.addEventListener('change', () => {
+    const newName = nameInput.value.trim();
+    if (!newName || newName === currentName) return;
+    if (campaign.metadata.attributes[newName]) { nameInput.value = currentName; return; }
+    const def = campaign.metadata.attributes[currentName];
+    delete campaign.metadata.attributes[currentName];
+    campaign.metadata.attributes[newName] = def;
+    currentName = newName;
+    scheduleValidation();
+    markDirty();
+  });
+
+  const delBtn = document.createElement('button');
+  delBtn.className = 'ed-attr-card__delete';
+  delBtn.textContent = '✕';
+  delBtn.title = 'Delete attribute';
+  delBtn.addEventListener('click', () => {
+    delete campaign.metadata.attributes[currentName];
+    renderAttributesEditor();
+    scheduleValidation();
+    markDirty();
+  });
+
+  nameRow.appendChild(nameInput);
+  nameRow.appendChild(delBtn);
+  card.appendChild(nameRow);
+
+  // Field grid
+  const grid = document.createElement('div');
+  grid.className = 'ed-attr-card__grid';
+
+  function addAttrField(labelText, element) {
+    const lbl = document.createElement('label');
+    lbl.className = 'ed-label';
+    lbl.textContent = labelText;
+    grid.appendChild(lbl);
+    grid.appendChild(element);
+  }
+
+  // Starting value
+  const valueInput = makeInput('number', String(Number(attrDef.value ?? 0)), '0');
+  valueInput.addEventListener('input', () => {
+    attrDef.value = Number(valueInput.value) || 0;
+    markDirty();
+  });
+  addAttrField('Starting value', valueInput);
+
+  // Label (optional)
+  const labelInput = makeInput('text', attrDef.label ?? '', 'Display label (optional)');
+  labelInput.addEventListener('input', () => {
+    attrDef.label = labelInput.value || undefined;
+    markDirty();
+  });
+  addAttrField('Label', labelInput);
+
+  // Min toggle + value + death message
+  const hasMin = attrDef.min != null;
+  const minToggleRow = document.createElement('div');
+  minToggleRow.className = 'ed-toggle-row';
+  const minToggleLabel = document.createElement('label');
+  minToggleLabel.className = 'ed-toggle';
+  const minCheck = document.createElement('input');
+  minCheck.type = 'checkbox';
+  minCheck.checked = hasMin;
+  minToggleLabel.appendChild(minCheck);
+  minToggleLabel.appendChild(document.createTextNode('Min (death trigger)'));
+  const minInput = makeInput('number', hasMin ? String(Number(attrDef.min)) : '', '0');
+  minInput.className += ' ed-input--narrow';
+  if (!hasMin) minInput.classList.add('hidden');
+  minToggleRow.appendChild(minToggleLabel);
+  minToggleRow.appendChild(minInput);
+  addAttrField('Min', minToggleRow);
+
+  // Death message (hidden until min is enabled)
+  const minMsgWrap = document.createElement('div');
+  if (!hasMin) minMsgWrap.classList.add('hidden');
+  const minMsgInput = makeInput('text', attrDef.min_message ?? '', 'Message shown on death');
+  minMsgInput.addEventListener('input', () => {
+    attrDef.min_message = minMsgInput.value || undefined;
+    markDirty();
+  });
+  minMsgWrap.appendChild(minMsgInput);
+  addAttrField('Death message', minMsgWrap);
+
+  minCheck.addEventListener('change', () => {
+    const en = minCheck.checked;
+    minInput.classList.toggle('hidden', !en);
+    minMsgWrap.classList.toggle('hidden', !en);
+    if (en) {
+      attrDef.min = Number(minInput.value) || 0;
+      if (!minInput.value) minInput.value = '0';
+    } else {
+      delete attrDef.min;
+      delete attrDef.min_message;
+      minInput.value = '';
+      minMsgInput.value = '';
+    }
+    markDirty();
+    scheduleValidation();
+  });
+  minInput.addEventListener('input', () => {
+    attrDef.min = minInput.value !== '' ? Number(minInput.value) : undefined;
+    markDirty();
+  });
+
+  // Max toggle + value
+  const hasMax = attrDef.max != null;
+  const maxToggleRow = document.createElement('div');
+  maxToggleRow.className = 'ed-toggle-row';
+  const maxToggleLabel = document.createElement('label');
+  maxToggleLabel.className = 'ed-toggle';
+  const maxCheck = document.createElement('input');
+  maxCheck.type = 'checkbox';
+  maxCheck.checked = hasMax;
+  maxToggleLabel.appendChild(maxCheck);
+  maxToggleLabel.appendChild(document.createTextNode('Max (clamp)'));
+  const maxInput = makeInput('number', hasMax ? String(Number(attrDef.max)) : '', '100');
+  maxInput.className += ' ed-input--narrow';
+  if (!hasMax) maxInput.classList.add('hidden');
+  maxToggleRow.appendChild(maxToggleLabel);
+  maxToggleRow.appendChild(maxInput);
+  addAttrField('Max', maxToggleRow);
+
+  maxCheck.addEventListener('change', () => {
+    const en = maxCheck.checked;
+    maxInput.classList.toggle('hidden', !en);
+    if (en) {
+      attrDef.max = Number(maxInput.value) || 100;
+      if (!maxInput.value) maxInput.value = String(attrDef.max);
+    } else {
+      delete attrDef.max;
+      maxInput.value = '';
+    }
+    markDirty();
+    scheduleValidation();
+  });
+  maxInput.addEventListener('input', () => {
+    attrDef.max = maxInput.value !== '' ? Number(maxInput.value) : undefined;
+    markDirty();
+  });
+
+  card.appendChild(grid);
+  return card;
+}
+
+/**
+ * Render an affect_attributes editor into container.
+ * Shows one signed number input per attribute defined in campaign.metadata.attributes.
+ * @param {HTMLElement} container
+ * @param {object|undefined} currentAttrs  — current affect_attributes dict (may be sparse)
+ * @param {function(object|undefined): void} onChange
+ */
+function makeAffectAttributesEditor(container, currentAttrs, onChange) {
+  container.innerHTML = '';
+  const attrDefs = campaign.metadata?.attributes ?? {};
+  const attrNames = Object.keys(attrDefs);
+
+  if (attrNames.length === 0) {
+    const hint = document.createElement('span');
+    hint.className = 'ed-hint';
+    hint.textContent = 'No attributes defined in metadata.';
+    container.appendChild(hint);
+    return;
+  }
+
+  const current = { ...(currentAttrs ?? {}) };
+  const grid = document.createElement('div');
+  grid.className = 'ed-field-grid';
+
+  for (const attrName of attrNames) {
+    const def = attrDefs[attrName];
+    const displayLabel = def.label || attrName;
+
+    const lbl = document.createElement('label');
+    lbl.className = 'ed-label';
+    lbl.textContent = displayLabel;
+
+    const existingVal = current[attrName];
+    const input = makeInput('number', existingVal !== undefined ? String(Number(existingVal)) : '', '0');
+    input.addEventListener('input', () => {
+      const n = Number(input.value);
+      if (input.value !== '' && n !== 0) {
+        current[attrName] = n;
+      } else {
+        delete current[attrName];
+      }
+      const result = Object.keys(current).length > 0 ? { ...current } : undefined;
+      onChange(result);
+    });
+
+    grid.appendChild(lbl);
+    grid.appendChild(input);
+  }
+
+  container.appendChild(grid);
 }
 
 // ─── Validation panel ─────────────────────────────────────────────────────────

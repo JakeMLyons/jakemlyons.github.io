@@ -12,7 +12,7 @@ describe('PlayerState.copy()', () => {
     const s = new PlayerState({
       sceneId: 'a',
       inventory: ['sword'],
-      health: 10,
+      attributes: { health: 10 },
       visited: ['a'],
       notes: ['note1'],
     });
@@ -21,22 +21,22 @@ describe('PlayerState.copy()', () => {
     c.visited.push('b');
     c.notes.push('note2');
     c.sceneId = 'b';
-    c.health = 5;
+    c.attributes.health = 5;
 
     assert.deepEqual(s.inventory, ['sword']);
     assert.deepEqual(s.visited, ['a']);
     assert.deepEqual(s.notes, ['note1']);
     assert.equal(s.sceneId, 'a');
-    assert.equal(s.health, 10);
+    assert.equal(s.attributes.health, 10);
   });
 });
 
 describe('PlayerState.toDict() / fromDict()', () => {
-  it('round-trips all fields including health', () => {
+  it('round-trips all fields including attributes', () => {
     const s = new PlayerState({
       sceneId: 'forest',
       inventory: ['lantern', 'key'],
-      health: 75,
+      attributes: { health: 75, sanity: 8 },
       visited: ['start', 'forest'],
       notes: ['A hidden door to the north.'],
     });
@@ -45,59 +45,67 @@ describe('PlayerState.toDict() / fromDict()', () => {
 
     assert.equal(s2.sceneId, 'forest');
     assert.deepEqual(s2.inventory, ['lantern', 'key']);
-    assert.equal(s2.health, 75);
+    assert.deepEqual(s2.attributes, { health: 75, sanity: 8 });
     assert.deepEqual(s2.visited, ['start', 'forest']);
     assert.deepEqual(s2.notes, ['A hidden door to the north.']);
   });
 
-  it('toDict() uses snake_case keys matching Python format', () => {
+  it('toDict() uses snake_case keys matching save format', () => {
     const s = new PlayerState({ sceneId: 'x' });
     const d = s.toDict();
     assert.ok('scene_id' in d);
     assert.ok(!('sceneId' in d));
+    assert.ok('attributes' in d);
   });
 
-  it('health null round-trips correctly', () => {
-    const s = new PlayerState({ sceneId: 'x', health: null });
+  it('empty attributes dict round-trips correctly', () => {
+    const s = new PlayerState({ sceneId: 'x', attributes: {} });
     const d = s.toDict();
-    assert.equal(d.health, null);
+    assert.deepEqual(d.attributes, {});
     const s2 = PlayerState.fromDict(d);
-    assert.equal(s2.health, null);
+    assert.deepEqual(s2.attributes, {});
   });
 });
 
 describe('PlayerState.fromDict() backward compatibility', () => {
   it('defaults visited to [] when absent', () => {
-    const s = PlayerState.fromDict({ scene_id: 'x', inventory: [], health: null });
+    const s = PlayerState.fromDict({ scene_id: 'x', inventory: [] });
     assert.deepEqual(s.visited, []);
   });
 
   it('defaults notes to [] when absent', () => {
-    const s = PlayerState.fromDict({ scene_id: 'x', inventory: [], health: null });
+    const s = PlayerState.fromDict({ scene_id: 'x', inventory: [] });
     assert.deepEqual(s.notes, []);
+  });
+
+  it('defaults attributes to {} when absent', () => {
+    const s = PlayerState.fromDict({ scene_id: 'x', inventory: [] });
+    assert.deepEqual(s.attributes, {});
   });
 });
 
 describe('PlayerState.fromCampaign()', () => {
-  it('reads metadata.default_player_state correctly', () => {
+  it('reads metadata.attributes and inventory correctly', () => {
     const campaign = {
       metadata: {
         start: 'begin',
-        default_player_state: {
-          health: 100,
-          inventory: ['torch'],
+        attributes: {
+          health: { value: 100 },
+          sanity: { value: 10 },
         },
+        inventory: ['torch'],
       },
       scenes: {},
       items: {},
     };
     const s = PlayerState.fromCampaign(campaign);
     assert.equal(s.sceneId, 'begin');
-    assert.equal(s.health, 100);
+    assert.equal(s.attributes.health, 100);
+    assert.equal(s.attributes.sanity, 10);
     assert.deepEqual(s.inventory, ['torch']);
   });
 
-  it('handles missing default_player_state', () => {
+  it('handles missing attributes block', () => {
     const campaign = {
       metadata: { start: 'begin' },
       scenes: {},
@@ -105,22 +113,22 @@ describe('PlayerState.fromCampaign()', () => {
     };
     const s = PlayerState.fromCampaign(campaign);
     assert.equal(s.sceneId, 'begin');
-    assert.equal(s.health, null);
+    assert.deepEqual(s.attributes, {});
     assert.deepEqual(s.inventory, []);
   });
 
-  it('coerces string health to number', () => {
+  it('coerces string attribute values to numbers', () => {
     const campaign = {
       metadata: {
         start: 'begin',
-        default_player_state: { health: '50' },
+        attributes: { health: { value: '50' } },
       },
       scenes: {},
       items: {},
     };
     const s = PlayerState.fromCampaign(campaign);
-    assert.equal(s.health, 50);
-    assert.equal(typeof s.health, 'number');
+    assert.equal(s.attributes.health, 50);
+    assert.equal(typeof s.attributes.health, 'number');
   });
 });
 
@@ -132,6 +140,7 @@ describe('GameOutput constructor', () => {
     assert.deepEqual(o.messages, []);
     assert.equal(o.isTerminal, false);
     assert.equal(o.terminalReason, null);
+    assert.equal(o.deathMessage, null);
     assert.equal(o.noChoices, false);
   });
 });

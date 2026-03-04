@@ -52,13 +52,14 @@
 
   <!-- Top bar -->
   <header class="ed-topbar">
-    <span id="ed-title" class="ed-topbar__title">Untitled Campaign</span>
     <div class="ed-topbar__actions">
       <!-- Narrow viewport drawer toggles (hidden on wide screens) -->
       <button class="btn btn--ghost btn--small ed-drawer-toggle" id="ed-sidebar-toggle"
               aria-label="Toggle file/scene panel">☰</button>
       <button class="btn btn--ghost btn--small ed-drawer-toggle" id="ed-val-toggle"
               aria-label="Toggle validation panel">✓</button>
+      <!-- Dashboard link -->
+      <a href="dashboard.html" class="game-header__dashboard-link">← Dashboard</a>
       <!-- Action buttons -->
       <button class="btn btn--ghost btn--small" id="ed-save-btn" disabled>💾 Save</button>
       <button class="btn btn--ghost btn--small" id="ed-validate-btn">Validate</button>
@@ -72,6 +73,9 @@
 
     <!-- ── Left sidebar ───────────────────────────────────────────────────── -->
     <aside id="ed-sidebar" class="ed-sidebar">
+
+      <!-- Campaign title -->
+      <div id="ed-title" class="ed-sidebar__title">Untitled Campaign</div>
 
       <!-- Code mode: file tree -->
       <div id="ed-filetree" class="ed-filetree">
@@ -89,6 +93,14 @@
         <div class="ed-nav-section" id="ed-meta-section">
           <button class="ed-nav-section__hdr" id="ed-meta-nav">
             <span class="ed-nav-section__label">Metadata</span>
+            <span class="ed-nav-section__chevron" aria-hidden="true"></span>
+          </button>
+        </div>
+
+        <!-- Attributes nav -->
+        <div class="ed-nav-section" id="ed-attributes-section">
+          <button class="ed-nav-section__hdr" id="ed-attributes-nav">
+            <span class="ed-nav-section__label">Attributes</span>
             <span class="ed-nav-section__chevron" aria-hidden="true"></span>
           </button>
         </div>
@@ -179,50 +191,21 @@
               <option value="">(none)</option>
             </select>
 
-            <label class="ed-label">Health</label>
-            <div class="ed-toggle-row">
-              <label class="ed-toggle">
-                <input type="checkbox" id="ed-meta-health-enabled">
-                Enable health tracking
-              </label>
-              <input class="ed-input ed-input--narrow hidden" type="number"
-                     id="ed-meta-health" min="0" placeholder="100">
-            </div>
-
-            <label class="ed-label">Max health</label>
-            <div class="ed-toggle-row">
-              <label class="ed-toggle">
-                <input type="checkbox" id="ed-meta-max-health-enabled">
-                Cap healing
-              </label>
-              <input class="ed-input ed-input--narrow hidden" type="number"
-                     id="ed-meta-max-health" min="0" placeholder="100">
-            </div>
-
-            <label class="ed-label">Armor</label>
-            <div class="ed-toggle-row">
-              <label class="ed-toggle">
-                <input type="checkbox" id="ed-meta-armor-enabled">
-                Enable armor
-              </label>
-              <input class="ed-input ed-input--narrow hidden" type="number"
-                     id="ed-meta-armor" min="0" placeholder="0">
-            </div>
-
-            <label class="ed-label">Carry weight limit</label>
-            <div class="ed-toggle-row">
-              <label class="ed-toggle">
-                <input type="checkbox" id="ed-meta-max-carry-enabled">
-                Enable carry weight
-              </label>
-              <input class="ed-input ed-input--narrow hidden" type="number"
-                     id="ed-meta-max-carry" min="0" placeholder="unlimited">
-            </div>
-
             <label class="ed-label">Starting inventory</label>
             <div id="ed-meta-inventory-container" class="ed-pill-container"></div>
 
           </div>
+        </section>
+
+        <!-- Attributes registry view -->
+        <section id="ed-attributes-form" class="ed-form-section hidden">
+          <h2 class="ed-form-section__title">Attributes</h2>
+          <p class="ed-form-section__hint">
+            Define trackable stats for this campaign (Health, Sanity, etc.).
+            Omit entirely for no stat tracking — <code>affect_attributes</code> fields will be silently ignored.
+          </p>
+          <div id="ed-meta-attributes-list" class="ed-attr-list"></div>
+          <button class="btn btn--ghost btn--small" id="ed-meta-add-attr">+ Add attribute</button>
         </section>
 
         <!-- Scene editor form — shown when a scene is selected -->
@@ -258,13 +241,8 @@
               <input class="ed-input" type="text" id="ed-oe-message"
                      placeholder="Shown before scene text">
 
-              <label class="ed-label" for="ed-oe-damage">Damage</label>
-              <input class="ed-input ed-input--narrow" type="number" id="ed-oe-damage"
-                     min="0" placeholder="0">
-
-              <label class="ed-label" for="ed-oe-heal">Heal</label>
-              <input class="ed-input ed-input--narrow" type="number" id="ed-oe-heal"
-                     min="0" placeholder="0">
+              <label class="ed-label ed-label--top">Affect attributes</label>
+              <div id="ed-oe-affect-attrs-container" class="ed-affect-attrs-editor"></div>
 
               <label class="ed-label">Gives items</label>
               <div id="ed-oe-gives-items-container" class="ed-pill-container"></div>

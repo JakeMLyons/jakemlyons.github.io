@@ -99,15 +99,16 @@
   min-height: 42px;
 }
 
-.ed-topbar__title {
+.ed-sidebar__title {
   font-family: var(--ta-font-body);
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   color: var(--ta-text);
-  flex: 1;
-  min-width: 0;
+  padding: calc(var(--ta-spacing) * 0.75) var(--ta-spacing);
+  border-bottom: 1px solid var(--ta-border);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .ed-topbar__actions {
@@ -943,6 +944,148 @@ details[open] .ed-collapsible__header::before {
 
 .ed-add-item-btn {
   margin-top: 0.25em;
+}
+
+.ed-item-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25em;
+}
+
+.ed-item-row__attrs {
+  padding-left: 0.25em;
+  border-left: 2px solid var(--ta-border);
+}
+
+.ed-item-row__attrs .ed-field-grid {
+  grid-template-columns: 120px 1fr;
+}
+
+.ed-item-row__addattr {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  padding: 0.15em 0.5em;
+}
+
+.ed-item-attr-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  padding: 0.15em 0;
+}
+
+.ed-item-attr-row__label {
+  font-size: 0.8rem;
+  color: var(--ta-text-muted);
+  min-width: 80px;
+  flex-shrink: 0;
+}
+
+.ed-item-attr-row__input {
+  width: 70px;
+  flex-shrink: 0;
+}
+
+.ed-item-attr-row__remove {
+  background: none;
+  border: none;
+  color: var(--ta-text-muted);
+  cursor: pointer;
+  padding: 0 0.2em;
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
+.ed-item-attr-row__remove:hover {
+  color: var(--ta-danger);
+}
+
+.ed-item-attr-add {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  padding-top: 0.2em;
+}
+
+.ed-select--small {
+  font-size: 0.8rem;
+  padding: 0.15em 0.3em;
+}
+
+/* ── Attributes registry editor ───────────────────────────────────────────── */
+
+.ed-attributes-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5em;
+}
+
+.ed-attr-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5em;
+}
+
+.ed-attr-card {
+  background: var(--ta-surface);
+  border: 1px solid var(--ta-border);
+  border-radius: 4px;
+  padding: 0.5em 0.6em;
+}
+
+.ed-attr-card__name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  margin-bottom: 0.4em;
+}
+
+.ed-attr-card__name {
+  flex: 1;
+  font-weight: 600;
+}
+
+.ed-attr-card__delete {
+  background: none;
+  border: none;
+  color: var(--ta-text-muted);
+  cursor: pointer;
+  padding: 0.1em 0.3em;
+  font-size: 0.82rem;
+  flex-shrink: 0;
+}
+
+.ed-attr-card__delete:hover {
+  color: var(--ta-danger);
+}
+
+.ed-attr-card__grid {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 0.3em 0.5em;
+  align-items: center;
+}
+
+.ed-attr-card__grid .ed-label {
+  font-size: 0.8rem;
+}
+
+/* ── Affect-attributes editor ─────────────────────────────────────────────── */
+
+.ed-affect-attrs-editor .ed-field-grid {
+  grid-template-columns: 120px 1fr;
+}
+
+.ed-affect-attrs-editor .ed-hint {
+  font-size: 0.8rem;
+  color: var(--ta-text-muted);
+  font-style: italic;
+}
+
+/* Label variant that aligns to the top of its grid cell */
+.ed-label--top {
+  align-self: flex-start;
+  margin-top: 0.35em;
 }
 
 /* ── Recipes registry ─────────────────────────────────────────────────────── */
