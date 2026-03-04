@@ -1,102 +1,167 @@
 /**
  * events.js — Effect application functions.
  *
- * Direct JS port of adventure/events.py.
- *
  * All functions are pure transforms: they take state + data, apply effects,
- * and return { newState, messages }. They never mutate the input state
+ * and return { newState, messages } (or { newState, messages, died, deathMessage }
+ * for functions that can trigger death). They never mutate the input state
  * (call state.copy() first) and never touch the DOM.
  *
  * YAML integer coercion: because the campaign loader uses FAILSAFE_SCHEMA,
- * numeric fields (damage, heal, health) arrive as strings. All arithmetic
+ * numeric fields (affect_attributes values) arrive as strings. All arithmetic
  * in this module coerces with Number() before use.
  */
 
 import { PlayerState } from './state.js';
 
+// ─── Internal helpers ─────────────────────────────────────────────────────────
+
 /**
- * Compute total carry weight from an inventory list and item weight table.
- * @param {string[]} inventory
- * @param {object} itemWeights - { itemName: number }
- * @returns {number}
+ * Apply affect_attributes from an item on pickup.
+ * Clamps to [min, max] but never triggers death and never rejects the item.
+ * @param {string} itemName
+ * @param {PlayerState} state
+ * @param {object} campaign
+ * @returns {{ newState: PlayerState }}
  */
-function computeCarryWeight(inventory, itemWeights) {
-  return inventory.reduce((sum, item) => sum + Number(itemWeights[item] ?? 0), 0);
+function applyItemAttributeGrant(itemName, state, campaign) {
+  const item = campaign.items?.[itemName];
+  const affects = item?.affect_attributes ?? {};
+  if (Object.keys(affects).length === 0) return { newState: state };
+
+  const newState = state.copy();
+  const attrDefs = campaign.metadata?.attributes ?? {};
+
+  for (const [attrName, delta] of Object.entries(affects)) {
+    if (!(attrName in newState.attributes)) continue; // unknown attribute, skip
+    let newVal = newState.attributes[attrName] + Number(delta);
+    const def = attrDefs[attrName] ?? {};
+    if (def.max != null) newVal = Math.min(newVal, Number(def.max));
+    if (def.min != null) newVal = Math.max(newVal, Number(def.min));
+    newState.attributes[attrName] = newVal;
+    // no death check — items never kill on pickup
+  }
+
+  return { newState };
 }
 
 /**
- * Split items into accepted (fit under maxCarryWeight) and rejected (too heavy).
- * If maxCarryWeight is null, all items are accepted.
- * @param {string[]} items
+ * Reverse item's affect_attributes on removal. Clamps to [min, max], never kills.
+ * @param {string} itemName
  * @param {PlayerState} state
- * @param {object} itemWeights
- * @returns {{ accepted: string[], rejected: string[] }}
+ * @param {object} campaign
+ * @returns {{ newState: PlayerState }}
  */
-function weighedGrant(items, state, itemWeights) {
-  if (state.maxCarryWeight === null) return { accepted: items, rejected: [] };
+function applyItemAttributeRemoval(itemName, state, campaign) {
+  const item = campaign.items?.[itemName];
+  const affects = item?.affect_attributes ?? {};
+  if (Object.keys(affects).length === 0) return { newState: state };
 
-  const accepted = [];
-  const rejected = [];
-  let running = computeCarryWeight(state.inventory, itemWeights);
+  const newState = state.copy();
+  const attrDefs = campaign.metadata?.attributes ?? {};
 
-  for (const item of items) {
-    const w = Number(itemWeights[item] ?? 0);
-    if (running + w <= state.maxCarryWeight) {
-      accepted.push(item);
-      running += w;
-    } else {
-      rejected.push(item);
+  for (const [attrName, delta] of Object.entries(affects)) {
+    if (!(attrName in newState.attributes)) continue;
+    let newVal = newState.attributes[attrName] - Number(delta); // SUBTRACT to reverse grant
+    const def = attrDefs[attrName] ?? {};
+    if (def.max != null) newVal = Math.min(newVal, Number(def.max));
+    if (def.min != null) newVal = Math.max(newVal, Number(def.min));
+    newState.attributes[attrName] = newVal;
+    // no death check — items never kill on removal
+  }
+
+  return { newState };
+}
+
+// ─── Public API ───────────────────────────────────────────────────────────────
+
+/**
+ * Apply affect_attributes deltas from a choice or on_enter block.
+ * Clamps each attribute to [min, max]; checks for min breach (death).
+ *
+ * @param {object} data - choice or on_enter block
+ * @param {PlayerState} state
+ * @param {object} campaign
+ * @returns {{ newState: PlayerState, messages: string[], died: boolean, deathMessage: string|null }}
+ */
+export function applyAttributeEffects(data, state, campaign) {
+  const affects = data.affect_attributes ?? {};
+  if (Object.keys(affects).length === 0) {
+    return { newState: state, messages: [], died: false, deathMessage: null };
+  }
+
+  const newState = state.copy();
+  const attrDefs = campaign.metadata?.attributes ?? {};
+  const messages = [];
+  let died = false;
+  let deathMessage = null;
+
+  for (const [attrName, delta] of Object.entries(affects)) {
+    if (!(attrName in newState.attributes)) continue; // unknown attribute, skip
+    let newVal = newState.attributes[attrName] + Number(delta);
+    const def = attrDefs[attrName] ?? {};
+    if (def.max != null) newVal = Math.min(newVal, Number(def.max));
+    if (def.min != null) newVal = Math.max(newVal, Number(def.min));
+    newState.attributes[attrName] = newVal;
+    if (def.min != null && newVal <= Number(def.min) && !died) {
+      died = true;
+      deathMessage = def.min_message ?? null; // null = UI shows default fallback
     }
   }
-  return { accepted, rejected };
+
+  return { newState, messages, died, deathMessage };
 }
 
 /**
  * Add any items granted by a choice to inventory.
- * Skips items already held. Respects maxCarryWeight if set.
+ * Skips items already held. Items are always accepted — no attribute blocks grants.
+ * Applies affect_attributes for each accepted item (clamped, never kills).
  *
  * @param {object} choice
  * @param {PlayerState} state
- * @param {object} [itemWeights] - { itemName: number }
+ * @param {object} campaign
  * @returns {{ newState: PlayerState, messages: string[] }}
  */
-export function applyItemGrants(choice, state, itemWeights = {}) {
+export function applyItemGrants(choice, state, campaign) {
   const granted = choice.gives_items ?? [];
   const newItems = granted.filter((item) => !state.inventory.includes(item));
 
   if (newItems.length === 0) return { newState: state, messages: [] };
 
-  const { accepted, rejected } = weighedGrant(newItems, state, itemWeights);
-  const messages = [];
+  let newState = state.copy();
+  newState.inventory.push(...newItems);
+  const messages = [`You obtained: ${newItems.join(', ')}`];
 
-  if (rejected.length > 0) {
-    messages.push(`Too heavy to carry: ${rejected.join(', ')}`);
-  }
-  if (accepted.length === 0) {
-    return { newState: state, messages };
+  for (const itemName of newItems) {
+    const result = applyItemAttributeGrant(itemName, newState, campaign);
+    newState = result.newState;
   }
 
-  const newState = state.copy();
-  newState.inventory.push(...accepted);
-  messages.push(`You obtained: ${accepted.join(', ')}`);
   return { newState, messages };
 }
 
 /**
  * Remove any items consumed by a choice or on_enter block from inventory.
  * Silently skips items not currently held.
+ * Reverses affect_attributes for removed items (clamped, never kills).
  *
  * @param {object} data - choice or on_enter block
  * @param {PlayerState} state
+ * @param {object} campaign
  * @returns {{ newState: PlayerState, messages: string[] }}
  */
-export function applyItemRemovals(data, state) {
+export function applyItemRemovals(data, state, campaign) {
   const toRemove = data.removes_items ?? [];
   const held = toRemove.filter((item) => state.inventory.includes(item));
   if (held.length === 0) return { newState: state, messages: [] };
 
-  const newState = state.copy();
+  let newState = state.copy();
   newState.inventory = newState.inventory.filter((item) => !held.includes(item));
+
+  for (const itemName of held) {
+    const result = applyItemAttributeRemoval(itemName, newState, campaign);
+    newState = result.newState;
+  }
+
   return { newState, messages: [] };
 }
 
@@ -120,66 +185,23 @@ export function applyNoteGrants(data, state) {
 }
 
 /**
- * Apply damage and heal declared on a choice.
- * Silently no-ops if state.health === null (campaign does not track health).
- *
- * @param {object} choice
- * @param {PlayerState} state
- * @returns {{ newState: PlayerState, messages: string[] }}
- */
-export function applyChoiceHealth(choice, state) {
-  if (state.health === null) return { newState: state, messages: [] };
-
-  const damage = Number(choice.damage ?? 0);
-  const heal = Number(choice.heal ?? 0);
-
-  if (!damage && !heal) return { newState: state, messages: [] };
-
-  const newState = state.copy();
-  const messages = [];
-
-  if (damage) {
-    const armor = Number(newState.armor ?? 0);
-    const effectiveDamage = Math.max(0, damage - armor);
-    newState.health -= effectiveDamage;
-    if (effectiveDamage > 0) {
-      messages.push(`You took ${effectiveDamage} damage! Health: ${newState.health}`);
-    } else {
-      messages.push(`Your armor absorbed the damage!`);
-    }
-  }
-  if (heal) {
-    newState.health += heal;
-    if (newState.maxHealth !== null) {
-      newState.health = Math.min(newState.health, newState.maxHealth);
-    }
-    messages.push(`You recovered ${heal} health! Health: ${newState.health}`);
-  }
-
-  return { newState, messages };
-}
-
-/**
  * Process the on_enter block for a scene.
  *
  * Fires before scene text is displayed. Supported on_enter keys:
- *   message:      string     — displayed to the player (first in output order)
- *   gives_items:  string[]   — items added automatically
- *   removes_items: string[]  — items consumed automatically (silent, skips missing)
- *   gives_notes:  string[]   — journal notes added automatically
- *   damage:       number     — subtracted from health
- *   heal:         number     — added to health
- *
- * Health effects are silently ignored when state.health === null.
+ *   message:           string    — displayed to the player (first in output order)
+ *   gives_items:       string[]  — items added automatically
+ *   removes_items:     string[]  — items consumed automatically (silent, skips missing)
+ *   gives_notes:       string[]  — journal notes added automatically
+ *   affect_attributes: object    — attribute deltas applied on entry; can trigger death
  *
  * @param {object} scene
  * @param {PlayerState} state
- * @param {object} [itemWeights] - { itemName: number }
- * @returns {{ newState: PlayerState, messages: string[] }}
+ * @param {object} campaign
+ * @returns {{ newState: PlayerState, messages: string[], died: boolean, deathMessage: string|null }}
  */
-export function applySceneEvents(scene, state, itemWeights = {}) {
+export function applySceneEvents(scene, state, campaign) {
   const onEnter = scene.on_enter;
-  if (!onEnter) return { newState: state, messages: [] };
+  if (!onEnter) return { newState: state, messages: [], died: false, deathMessage: null };
 
   let newState = state.copy();
   const messages = [];
@@ -189,22 +211,20 @@ export function applySceneEvents(scene, state, itemWeights = {}) {
     messages.push(onEnter.message);
   }
 
-  // Auto-grant items (respects carry weight)
+  // Auto-grant items
   const granted = onEnter.gives_items ?? [];
   const newItems = granted.filter((item) => !newState.inventory.includes(item));
   if (newItems.length > 0) {
-    const { accepted, rejected } = weighedGrant(newItems, newState, itemWeights);
-    if (accepted.length > 0) {
-      newState.inventory.push(...accepted);
-      messages.push(`You found: ${accepted.join(', ')}`);
-    }
-    if (rejected.length > 0) {
-      messages.push(`Too heavy to carry: ${rejected.join(', ')}`);
+    newState.inventory.push(...newItems);
+    messages.push(`You found: ${newItems.join(', ')}`);
+    for (const itemName of newItems) {
+      const result = applyItemAttributeGrant(itemName, newState, campaign);
+      newState = result.newState;
     }
   }
 
   // Auto-remove consumed items
-  const removeResult = applyItemRemovals(onEnter, newState);
+  const removeResult = applyItemRemovals(onEnter, newState, campaign);
   newState = removeResult.newState;
 
   // Auto-grant notes
@@ -212,45 +232,27 @@ export function applySceneEvents(scene, state, itemWeights = {}) {
   newState = noteResult.newState;
   messages.push(...noteResult.messages);
 
-  // Health effects (only if health is tracked)
-  if (newState.health !== null) {
-    const damage = Number(onEnter.damage ?? 0);
-    const heal = Number(onEnter.heal ?? 0);
-    if (damage) {
-      const armor = Number(newState.armor ?? 0);
-      const effectiveDamage = Math.max(0, damage - armor);
-      newState.health -= effectiveDamage;
-      if (effectiveDamage > 0) {
-        messages.push(`You took ${effectiveDamage} damage! Health: ${newState.health}`);
-      } else {
-        messages.push(`Your armor absorbed the damage!`);
-      }
-    }
-    if (heal) {
-      newState.health += heal;
-      if (newState.maxHealth !== null) {
-        newState.health = Math.min(newState.health, newState.maxHealth);
-      }
-      messages.push(`You recovered ${heal} health! Health: ${newState.health}`);
-    }
-  }
+  // Attribute effects (may trigger death)
+  const attrResult = applyAttributeEffects(onEnter, newState, campaign);
+  newState = attrResult.newState;
+  messages.push(...attrResult.messages);
 
-  return { newState, messages };
+  return { newState, messages, died: attrResult.died, deathMessage: attrResult.deathMessage };
 }
 
 /**
  * Auto-fire any recipes whose inputs are all present in inventory.
  * Loops until no recipe fires (handles chains). Consumes inputs and grants
- * the output item. Respects maxCarryWeight if set.
+ * the output item. Items are always accepted — no attribute blocks grants.
  *
  * Recipe shape: { inputs: string[], output: string, message?: string }
  *
  * @param {PlayerState} state
  * @param {object[]} recipes
- * @param {object} [itemWeights]
+ * @param {object} campaign
  * @returns {{ newState: PlayerState, messages: string[] }}
  */
-export function applyRecipes(state, recipes, itemWeights = {}) {
+export function applyRecipes(state, recipes, campaign) {
   if (!recipes || recipes.length === 0) return { newState: state, messages: [] };
 
   let current = state;
@@ -265,19 +267,21 @@ export function applyRecipes(state, recipes, itemWeights = {}) {
       if (!inputs.every((item) => current.inventory.includes(item))) continue;
 
       fired = true;
-      const next = current.copy();
+      let next = current.copy();
       next.inventory = next.inventory.filter((item) => !inputs.includes(item));
+
+      // Reverse attribute effects for consumed inputs
+      for (const inputName of inputs) {
+        const result = applyItemAttributeRemoval(inputName, next, campaign);
+        next = result.newState;
+      }
 
       const output = recipe.output;
       if (output && !next.inventory.includes(output)) {
-        const { accepted, rejected } = weighedGrant([output], next, itemWeights);
-        next.inventory.push(...accepted);
-        if (rejected.length > 0) {
-          messages.push(recipe.message ?? `You combined: ${inputs.join(', ')}.`);
-          messages.push(`Too heavy to carry: ${rejected.join(', ')}`);
-          current = next;
-          continue;
-        }
+        next.inventory.push(output);
+        // Apply attribute effects for output item
+        const result = applyItemAttributeGrant(output, next, campaign);
+        next = result.newState;
       }
 
       if (recipe.message) {

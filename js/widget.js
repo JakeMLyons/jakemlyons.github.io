@@ -606,17 +606,10 @@ class TextAdventureElement extends HTMLElement {
     invSection.appendChild(this._inventoryList);
     hud.appendChild(invSection);
 
-    // Health
-    this._hudHealth = document.createElement('div');
-    this._hudHealth.className = 'w-hud-section';
-    const hLabel = document.createElement('div');
-    hLabel.className = 'w-hud-label';
-    hLabel.textContent = 'Health';
-    this._healthValue = document.createElement('div');
-    this._healthValue.className = 'w-hud-value';
-    this._hudHealth.appendChild(hLabel);
-    this._hudHealth.appendChild(this._healthValue);
-    hud.appendChild(this._hudHealth);
+    // Attributes (generic — populated dynamically on each render)
+    this._hudAttributes = document.createElement('div');
+    this._hudAttributes.className = 'w-hud-attributes';
+    hud.appendChild(this._hudAttributes);
 
     // Journal collapsible
     const journal = this._buildCollapsible('Journal');
@@ -788,7 +781,9 @@ class TextAdventureElement extends HTMLElement {
           btn.addEventListener('click', () => {
             desc.classList.toggle('item-desc--visible');
             if (!desc.textContent) {
-              desc.textContent = this._campaign.items[itemName] || 'No further description.';
+              const itemEntry = this._campaign.items[itemName];
+              const itemDesc = typeof itemEntry === 'string' ? itemEntry : (itemEntry?.description ?? '');
+              desc.textContent = itemDesc || 'No further description.';
             }
           });
           li.appendChild(btn);
@@ -801,12 +796,29 @@ class TextAdventureElement extends HTMLElement {
       }
     }
 
-    // Health
-    if (state.health === null) {
-      this._hudHealth.classList.add('hidden');
+    // Attributes
+    this._hudAttributes.innerHTML = '';
+    const attrDefs = this._campaign?.metadata?.attributes ?? {};
+    for (const [attrName, def] of Object.entries(attrDefs)) {
+      const val = state.attributes?.[attrName] ?? 0;
+      const label = def.label ?? attrName;
+      const maxStr = def.max != null ? ` / ${Number(def.max)}` : '';
+      const row = document.createElement('div');
+      row.className = 'w-hud-section';
+      const rowLabel = document.createElement('div');
+      rowLabel.className = 'w-hud-label';
+      rowLabel.textContent = label;
+      const rowValue = document.createElement('div');
+      rowValue.className = 'w-hud-value';
+      rowValue.textContent = `${val}${maxStr}`;
+      row.appendChild(rowLabel);
+      row.appendChild(rowValue);
+      this._hudAttributes.appendChild(row);
+    }
+    if (Object.keys(attrDefs).length === 0) {
+      this._hudAttributes.classList.add('hidden');
     } else {
-      this._hudHealth.classList.remove('hidden');
-      this._healthValue.textContent = String(state.health);
+      this._hudAttributes.classList.remove('hidden');
     }
 
     // Journal

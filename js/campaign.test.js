@@ -175,7 +175,7 @@ describe('loadCampaign()', () => {
     const campaign = await loadCampaign(files);
     assert.ok('start' in campaign.scenes);
     assert.ok('end' in campaign.scenes);
-    assert.equal(campaign.items.sword, 'A sharp blade.');
+    assert.equal(campaign.items.sword.description, 'A sharp blade.');
   });
 
   it('handles folder-style paths with a root prefix', async () => {

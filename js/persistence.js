@@ -40,7 +40,7 @@ export async function saveGame(campaignName, state, savesKey = SAVES_PREFIX) {
     saved_at: isoTimestamp,
     scene_id: state.sceneId,
     inventory: [...state.inventory],
-    health: state.health,
+    attributes: { ...state.attributes },
     visited: [...state.visited],
     notes: [...state.notes],
   };
@@ -153,7 +153,7 @@ export function downloadSave(state, campaignName) {
     saved_at: isoTimestamp,
     scene_id: state.sceneId,
     inventory: [...state.inventory],
-    health: state.health,
+    attributes: { ...state.attributes },
     visited: [...state.visited],
     notes: [...state.notes],
   };

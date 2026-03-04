@@ -78,7 +78,7 @@ async function loadPackagedCampaigns() {
       const name = zipName.replace(/\.zip$/i, '');
       const campaign = await loadCampaign(files);
       const validation = validateCampaign(campaign);
-      addToLibrary(name, campaign, validation);
+      addToLibrary(name, campaign, validation, files);
     } catch (e) {
       console.warn(`Packaged campaign "${zipName}" failed to load:`, e.message);
     }
@@ -209,7 +209,7 @@ async function processFiles(files, zipName) {
   }
 
   const validation = validateCampaign(campaign);
-  addToLibrary(name, campaign, validation);
+  addToLibrary(name, campaign, validation, files);
   setSubpanelStatus('Campaign loaded.');
   // Hide sub-panel after success
   setTimeout(() => {
@@ -220,7 +220,7 @@ async function processFiles(files, zipName) {
 
 // ─── Library management ───────────────────────────────────────────────────────
 
-function addToLibrary(name, campaign, validation) {
+function addToLibrary(name, campaign, validation, files) {
   // Check if a campaign with the same name already exists — update in place
   const existingIndex = library.findIndex((e) => e.name === name);
   if (existingIndex !== -1) {
@@ -228,6 +228,7 @@ function addToLibrary(name, campaign, validation) {
       ...library[existingIndex],
       campaign,
       validation,
+      files: files ?? library[existingIndex].files,
       loadedAt: new Date(),
     };
     renderLibrary();
@@ -248,6 +249,7 @@ function addToLibrary(name, campaign, validation) {
     name,
     campaign,
     validation,
+    files: files ?? null,
     loadedAt: new Date(),
   };
   library.push(entry);
@@ -292,7 +294,7 @@ function buildCard(entry) {
   const scenes = campaign.scenes ?? {};
   const sceneCount = Object.keys(scenes).length;
   const endingCount = Object.values(scenes).filter((s) => s.end).length;
-  const hasHealth = campaign.metadata?.default_player_state?.health != null;
+  const hasHealth = Object.keys(campaign.metadata?.attributes ?? {}).length > 0;
   const errorCount = validation.filter((r) => r.level === 'error').length;
 
   const card = document.createElement('div');
@@ -366,7 +368,6 @@ function renderDetail(entry) {
 
   const { name, campaign, validation } = entry;
   const meta = campaign.metadata ?? {};
-  const dps = meta.default_player_state ?? {};
   const scenes = campaign.scenes ?? {};
   const items = campaign.items ?? {};
 
@@ -380,10 +381,17 @@ function renderDetail(entry) {
   if (meta.version) addGridRow(grid, 'Version', meta.version);
   if (meta.description) addGridRow(grid, 'Description', meta.description);
   addGridRow(grid, 'Starting scene', meta.start ?? '—');
-  addGridRow(grid, 'Starting health',
-    dps.health != null ? String(Number(dps.health)) : 'Not tracked');
+  const attrDefs = meta.attributes ?? {};
+  const attrKeys = Object.keys(attrDefs);
+  if (attrKeys.length > 0) {
+    const attrSummary = attrKeys.map((k) => {
+      const def = attrDefs[k];
+      return `${def.label ?? k}: ${Number(def.value ?? 0)}`;
+    }).join(', ');
+    addGridRow(grid, 'Attributes', attrSummary);
+  }
   addGridRow(grid, 'Starting inventory',
-    (dps.inventory?.length > 0) ? dps.inventory.join(', ') : 'Empty');
+    (meta.inventory?.length > 0) ? meta.inventory.join(', ') : 'Empty');
 
   if (meta.tags?.length > 0) {
     const tagRow = document.createElement('div');
@@ -537,7 +545,7 @@ function launchCampaign(entry) {
 // ─── Edit ─────────────────────────────────────────────────────────────────────
 
 function editCampaign(entry) {
-  const serialised = JSON.stringify({ campaign: entry.campaign, name: entry.name });
+  const serialised = JSON.stringify({ campaign: entry.campaign, name: entry.name, files: entry.files ?? null });
   try {
     localStorage.setItem('adventure_pending_edit', serialised);
     window.location.href = 'editor.html?edit';

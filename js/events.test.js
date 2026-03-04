@@ -10,7 +10,7 @@ import {
   applyItemGrants,
   applyItemRemovals,
   applyNoteGrants,
-  applyChoiceHealth,
+  applyAttributeEffects,
   applySceneEvents,
 } from './events.js';
 
@@ -18,11 +18,16 @@ function makeState(overrides = {}) {
   return new PlayerState({
     sceneId: 'test',
     inventory: [],
-    health: 100,
+    attributes: {},
     visited: [],
     notes: [],
     ...overrides,
   });
+}
+
+/** Campaign with a single health attribute (min 0, max 100). */
+function makeCampaign(attrDefs = { health: { value: 100, min: 0, max: 100 } }) {
+  return { metadata: { attributes: attrDefs }, items: {} };
 }
 
 // ─── applyItemGrants ─────────────────────────────────────────────────────────
@@ -32,7 +37,8 @@ describe('applyItemGrants()', () => {
     const state = makeState();
     const { newState, messages } = applyItemGrants(
       { gives_items: ['lantern', 'key'] },
-      state
+      state,
+      {}
     );
     assert.deepEqual(newState.inventory, ['lantern', 'key']);
     assert.deepEqual(messages, ['You obtained: lantern, key']);
@@ -42,7 +48,8 @@ describe('applyItemGrants()', () => {
     const state = makeState({ inventory: ['lantern'] });
     const { newState, messages } = applyItemGrants(
       { gives_items: ['lantern', 'key'] },
-      state
+      state,
+      {}
     );
     assert.deepEqual(newState.inventory, ['lantern', 'key']);
     assert.deepEqual(messages, ['You obtained: key']);
@@ -52,7 +59,8 @@ describe('applyItemGrants()', () => {
     const state = makeState({ inventory: ['lantern'] });
     const { newState, messages } = applyItemGrants(
       { gives_items: ['lantern'] },
-      state
+      state,
+      {}
     );
     assert.deepEqual(messages, []);
     assert.deepEqual(newState.inventory, ['lantern']);
@@ -60,13 +68,13 @@ describe('applyItemGrants()', () => {
 
   it('does not mutate input state', () => {
     const state = makeState();
-    applyItemGrants({ gives_items: ['sword'] }, state);
+    applyItemGrants({ gives_items: ['sword'] }, state, {});
     assert.deepEqual(state.inventory, []);
   });
 
   it('handles missing gives_items gracefully', () => {
     const state = makeState();
-    const { newState, messages } = applyItemGrants({}, state);
+    const { newState, messages } = applyItemGrants({}, state, {});
     assert.deepEqual(messages, []);
     assert.deepEqual(newState.inventory, []);
   });
@@ -79,7 +87,8 @@ describe('applyItemRemovals()', () => {
     const state = makeState({ inventory: ['lantern', 'key'] });
     const { newState, messages } = applyItemRemovals(
       { removes_items: ['lantern'] },
-      state
+      state,
+      {}
     );
     assert.deepEqual(newState.inventory, ['key']);
     assert.deepEqual(messages, []);
@@ -89,7 +98,8 @@ describe('applyItemRemovals()', () => {
     const state = makeState({ inventory: ['lantern', 'key', 'map'] });
     const { newState } = applyItemRemovals(
       { removes_items: ['lantern', 'map'] },
-      state
+      state,
+      {}
     );
     assert.deepEqual(newState.inventory, ['key']);
   });
@@ -98,7 +108,8 @@ describe('applyItemRemovals()', () => {
     const state = makeState({ inventory: ['lantern'] });
     const { newState, messages } = applyItemRemovals(
       { removes_items: ['key'] },
-      state
+      state,
+      {}
     );
     assert.deepEqual(newState.inventory, ['lantern']);
     assert.deepEqual(messages, []);
@@ -108,27 +119,28 @@ describe('applyItemRemovals()', () => {
     const state = makeState({ inventory: ['lantern'] });
     const { messages } = applyItemRemovals(
       { removes_items: ['lantern'] },
-      state
+      state,
+      {}
     );
     assert.deepEqual(messages, []);
   });
 
   it('handles missing removes_items gracefully', () => {
     const state = makeState({ inventory: ['lantern'] });
-    const { newState, messages } = applyItemRemovals({}, state);
+    const { newState, messages } = applyItemRemovals({}, state, {});
     assert.deepEqual(newState.inventory, ['lantern']);
     assert.deepEqual(messages, []);
   });
 
   it('does not mutate input state', () => {
     const state = makeState({ inventory: ['lantern'] });
-    applyItemRemovals({ removes_items: ['lantern'] }, state);
+    applyItemRemovals({ removes_items: ['lantern'] }, state, {});
     assert.deepEqual(state.inventory, ['lantern']);
   });
 
   it('returns original state reference when nothing removed', () => {
     const state = makeState({ inventory: ['lantern'] });
-    const { newState } = applyItemRemovals({ removes_items: ['key'] }, state);
+    const { newState } = applyItemRemovals({ removes_items: ['key'] }, state, {});
     assert.equal(newState, state);
   });
 });
@@ -169,57 +181,106 @@ describe('applyNoteGrants()', () => {
   });
 });
 
-// ─── applyChoiceHealth ───────────────────────────────────────────────────────
+// ─── applyAttributeEffects ───────────────────────────────────────────────────
 
-describe('applyChoiceHealth()', () => {
-  it('applies damage', () => {
-    const state = makeState({ health: 100 });
-    const { newState, messages } = applyChoiceHealth({ damage: 10 }, state);
-    assert.equal(newState.health, 90);
-    assert.deepEqual(messages, ['You took 10 damage! Health: 90']);
-  });
-
-  it('applies heal', () => {
-    const state = makeState({ health: 80 });
-    const { newState, messages } = applyChoiceHealth({ heal: 20 }, state);
-    assert.equal(newState.health, 100);
-    assert.deepEqual(messages, ['You recovered 20 health! Health: 100']);
-  });
-
-  it('applies both damage and heal', () => {
-    const state = makeState({ health: 50 });
-    const { newState, messages } = applyChoiceHealth(
-      { damage: 10, heal: 5 },
-      state
+describe('applyAttributeEffects()', () => {
+  it('applies a negative delta (damage)', () => {
+    const state = makeState({ attributes: { health: 100 } });
+    const { newState, died } = applyAttributeEffects(
+      { affect_attributes: { health: -10 } },
+      state,
+      makeCampaign()
     );
-    assert.equal(newState.health, 45);
-    assert.equal(messages.length, 2);
+    assert.equal(newState.attributes.health, 90);
+    assert.equal(died, false);
   });
 
-  it('no-ops when neither damage nor heal', () => {
-    const state = makeState({ health: 50 });
-    const { newState, messages } = applyChoiceHealth({}, state);
-    assert.equal(newState.health, 50);
+  it('applies a positive delta (heal)', () => {
+    const state = makeState({ attributes: { health: 80 } });
+    const { newState, died } = applyAttributeEffects(
+      { affect_attributes: { health: 10 } },
+      state,
+      makeCampaign()
+    );
+    assert.equal(newState.attributes.health, 90);
+    assert.equal(died, false);
+  });
+
+  it('clamps value at max', () => {
+    const state = makeState({ attributes: { health: 90 } });
+    const { newState } = applyAttributeEffects(
+      { affect_attributes: { health: 50 } },
+      state,
+      makeCampaign({ health: { value: 100, min: 0, max: 100 } })
+    );
+    assert.equal(newState.attributes.health, 100);
+  });
+
+  it('clamps value at min and sets died=true', () => {
+    const state = makeState({ attributes: { health: 5 } });
+    const { newState, died, deathMessage } = applyAttributeEffects(
+      { affect_attributes: { health: -20 } },
+      state,
+      makeCampaign({ health: { value: 100, min: 0, max: 100 } })
+    );
+    assert.equal(newState.attributes.health, 0);
+    assert.equal(died, true);
+    assert.equal(deathMessage, null); // no min_message defined
+  });
+
+  it('uses min_message as deathMessage when defined', () => {
+    const state = makeState({ attributes: { health: 1 } });
+    const { died, deathMessage } = applyAttributeEffects(
+      { affect_attributes: { health: -100 } },
+      state,
+      makeCampaign({ health: { value: 100, min: 0, min_message: 'You have perished.' } })
+    );
+    assert.equal(died, true);
+    assert.equal(deathMessage, 'You have perished.');
+  });
+
+  it('no-ops when affect_attributes is absent', () => {
+    const state = makeState({ attributes: { health: 50 } });
+    const { newState, died } = applyAttributeEffects({}, state, makeCampaign());
+    assert.equal(newState.attributes.health, 50);
+    assert.equal(died, false);
+  });
+
+  it('silently skips unknown attributes', () => {
+    const state = makeState({ attributes: {} });
+    const { newState, died } = applyAttributeEffects(
+      { affect_attributes: { health: -10 } },
+      state,
+      {}
+    );
+    assert.deepEqual(newState.attributes, {});
+    assert.equal(died, false);
+  });
+
+  it('coerces string delta values', () => {
+    const state = makeState({ attributes: { health: 100 } });
+    const { newState } = applyAttributeEffects(
+      { affect_attributes: { health: '-5' } },
+      state,
+      makeCampaign()
+    );
+    assert.equal(newState.attributes.health, 95);
+  });
+
+  it('always returns empty messages array', () => {
+    const state = makeState({ attributes: { health: 100 } });
+    const { messages } = applyAttributeEffects(
+      { affect_attributes: { health: -10 } },
+      state,
+      makeCampaign()
+    );
     assert.deepEqual(messages, []);
-  });
-
-  it('silently no-ops when health is null', () => {
-    const state = makeState({ health: null });
-    const { newState, messages } = applyChoiceHealth({ damage: 10 }, state);
-    assert.equal(newState.health, null);
-    assert.deepEqual(messages, []);
-  });
-
-  it('coerces string "5" damage correctly', () => {
-    const state = makeState({ health: 100 });
-    const { newState } = applyChoiceHealth({ damage: '5' }, state);
-    assert.equal(newState.health, 95);
   });
 
   it('does not mutate input state', () => {
-    const state = makeState({ health: 100 });
-    applyChoiceHealth({ damage: 10 }, state);
-    assert.equal(state.health, 100);
+    const state = makeState({ attributes: { health: 100 } });
+    applyAttributeEffects({ affect_attributes: { health: -10 } }, state, makeCampaign());
+    assert.equal(state.attributes.health, 100);
   });
 });
 
@@ -228,64 +289,72 @@ describe('applyChoiceHealth()', () => {
 describe('applySceneEvents()', () => {
   it('returns unchanged state and empty messages when no on_enter', () => {
     const state = makeState();
-    const { newState, messages } = applySceneEvents({}, state);
+    const { newState, messages } = applySceneEvents({}, state, {});
     assert.deepEqual(messages, []);
     assert.deepEqual(newState.inventory, []);
   });
 
-  it('processes full on_enter block in display order: message, items, notes, health', () => {
+  it('processes full on_enter block in display order: message, items, notes', () => {
     const scene = {
       on_enter: {
         message: 'A trap springs!',
         gives_items: ['map fragment'],
         gives_notes: ['Wall inscription: three keys.'],
-        damage: 10,
+        affect_attributes: { health: -10 },
       },
     };
-    const state = makeState({ health: 100 });
-    const { newState, messages } = applySceneEvents(scene, state);
+    const campaign = makeCampaign();
+    const state = makeState({ attributes: { health: 100 } });
+    const { newState, messages } = applySceneEvents(scene, state, campaign);
 
     assert.equal(messages[0], 'A trap springs!');
     assert.equal(messages[1], 'You found: map fragment');
     assert.equal(messages[2], 'Journal updated.');
-    assert.equal(messages[3], 'You took 10 damage! Health: 90');
+    assert.equal(messages.length, 3);
     assert.deepEqual(newState.inventory, ['map fragment']);
-    assert.equal(newState.health, 90);
+    assert.equal(newState.attributes.health, 90);
   });
 
   it('gives_items in on_enter uses "You found:" (not "You obtained:")', () => {
     const scene = { on_enter: { gives_items: ['lantern'] } };
-    const { messages } = applySceneEvents(scene, makeState());
+    const { messages } = applySceneEvents(scene, makeState(), {});
     assert.equal(messages[0], 'You found: lantern');
   });
 
-  it('silently no-ops health when health is null', () => {
-    const scene = { on_enter: { damage: 99 } };
-    const state = makeState({ health: null });
-    const { newState, messages } = applySceneEvents(scene, state);
-    assert.equal(newState.health, null);
+  it('affect_attributes on unknown attribute is silently skipped', () => {
+    const scene = { on_enter: { affect_attributes: { health: -99 } } };
+    const state = makeState(); // no attributes
+    const { newState, messages } = applySceneEvents(scene, state, {});
+    assert.deepEqual(newState.attributes, {});
     assert.deepEqual(messages, []);
   });
 
   it('does not mutate input state', () => {
-    const scene = { on_enter: { gives_items: ['sword'], damage: 5 } };
-    const state = makeState({ health: 100 });
-    applySceneEvents(scene, state);
+    const scene = {
+      on_enter: {
+        gives_items: ['sword'],
+        affect_attributes: { health: -5 },
+      },
+    };
+    const campaign = makeCampaign();
+    const state = makeState({ attributes: { health: 100 } });
+    applySceneEvents(scene, state, campaign);
     assert.deepEqual(state.inventory, []);
-    assert.equal(state.health, 100);
+    assert.equal(state.attributes.health, 100);
   });
 
-  it('coerces string "10" damage correctly', () => {
-    const scene = { on_enter: { damage: '10' } };
-    const state = makeState({ health: 100 });
-    const { newState } = applySceneEvents(scene, state);
-    assert.equal(newState.health, 90);
+  it('coerces string affect_attributes delta values', () => {
+    const scene = { on_enter: { affect_attributes: { health: '-10' } } };
+    const campaign = makeCampaign();
+    const state = makeState({ attributes: { health: 100 } });
+    const { newState } = applySceneEvents(scene, state, campaign);
+    assert.equal(newState.attributes.health, 90);
   });
 
   it('removes items listed in removes_items', () => {
     const scene = { on_enter: { removes_items: ['lantern'] } };
     const state = makeState({ inventory: ['lantern', 'key'] });
-    const { newState, messages } = applySceneEvents(scene, state);
+    const { newState, messages } = applySceneEvents(scene, state, {});
     assert.deepEqual(newState.inventory, ['key']);
     assert.deepEqual(messages, []);
   });
@@ -295,7 +364,7 @@ describe('applySceneEvents()', () => {
       on_enter: { gives_items: ['potion'], removes_items: ['potion'] },
     };
     const state = makeState();
-    const { newState } = applySceneEvents(scene, state);
+    const { newState } = applySceneEvents(scene, state, {});
     assert.deepEqual(newState.inventory, []);
   });
 });

@@ -25,16 +25,16 @@ Five campaigns load automatically — click any card to see details, then click 
 
 When a scene loads, you'll see story text followed by a list of choices. Click a choice to advance. Some choices only appear if you're carrying the right item — explore carefully and pick things up when you can.
 
-In campaigns that track health, certain choices or locations can damage or heal you. Reach 0 health and it's game over.
+In campaigns that track attributes like health, certain choices or locations can change those values. If a stat reaches its minimum value (e.g. health hits 0), the game ends.
 
 ### The HUD sidebar
 
-| Panel     | What it shows                                                           |
-| --------- | ----------------------------------------------------------------------- |
-| Inventory | Items you're currently carrying. Click an item to read its description. |
-| Health    | Your current health value. Hidden in campaigns that don't track health. |
-| Journal   | Notes and discoveries accumulated during your playthrough.              |
-| Map       | A list of scenes you have visited, in order.                            |
+| Panel      | What it shows                                                                           |
+| ---------- | --------------------------------------------------------------------------------------- |
+| Inventory  | Items you're currently carrying. Click an item to read its description.                 |
+| Attributes | Stats tracked by the campaign (e.g. Health, Carry Weight). Hidden if none are defined.  |
+| Journal    | Notes and discoveries accumulated during your playthrough.                              |
+| Map        | A list of scenes you have visited, in order.                                            |
 
 ### Toolbar actions
 
@@ -122,9 +122,12 @@ metadata:
   title: "My Adventure"
   description: "A short description."
   start: begin
-  default_player_state:
-    health: 20       # omit this line entirely to disable health tracking
-    inventory: []
+  attributes:          # optional — omit entirely if you don't need stat tracking
+    health:
+      value: 20        # starting value
+      min: 0           # reaching this ends the game
+      label: "Health"
+  inventory: []
 ```
 
 **scenes.yaml:**
@@ -177,9 +180,9 @@ items:
 - `gives_items` adds items to the player's inventory when a choice is selected.
 - `requires_item` hides a choice until the player carries the named item (case-sensitive).
 - `requires_items` (a list) hides a choice until the player holds *all* listed items.
-- `damage` and `heal` on a choice adjust health immediately. Reaching 0 health ends the game.
-- `on_enter` on a scene fires automatically on arrival — useful for traps, automatic discoveries, and environmental effects.
-- Omitting `default_player_state.health` disables health tracking for the entire campaign.
+- `affect_attributes` on a choice applies numeric deltas to named attributes. If any attribute reaches its declared `min`, the game ends before entering the next scene.
+- `on_enter` on a scene fires automatically on arrival — useful for traps, automatic discoveries, and environmental effects. It also supports `affect_attributes`.
+- Omitting the `attributes:` block in `metadata.yaml` disables all stat tracking for the entire campaign.
 
 ---
 

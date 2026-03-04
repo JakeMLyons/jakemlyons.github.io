@@ -39,7 +39,7 @@ function makeState(overrides = {}) {
   return new PlayerState({
     sceneId: 'forest',
     inventory: ['lantern'],
-    health: 75,
+    attributes: { health: 75 },
     visited: ['start', 'forest'],
     notes: ['A clue.'],
     ...overrides,
@@ -64,7 +64,7 @@ describe('saveGame() + loadSaveFromStorage()', () => {
     assert.equal(campaignName, 'TheDarkForest');
     assert.equal(loaded.sceneId, 'forest');
     assert.deepEqual(loaded.inventory, ['lantern']);
-    assert.equal(loaded.health, 75);
+    assert.equal(loaded.attributes.health, 75);
     assert.deepEqual(loaded.visited, ['start', 'forest']);
     assert.deepEqual(loaded.notes, ['A clue.']);
   });

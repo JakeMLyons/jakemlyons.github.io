@@ -15,7 +15,8 @@ function makeCampaign(overrides = {}) {
     metadata: {
       title: 'Test',
       start: 'start',
-      default_player_state: { health: 100, inventory: [] },
+      attributes: { health: { value: 100, min: 0 } },
+      inventory: [],
     },
     scenes: {
       start: {
@@ -28,6 +29,7 @@ function makeCampaign(overrides = {}) {
       },
     },
     items: {},
+    recipes: [],
     ...overrides,
   };
 }
@@ -51,7 +53,7 @@ describe('GameEngine.start()', () => {
 
   it('performs death check: starting scene with lethal on_enter damage', () => {
     const campaign = makeCampaign();
-    campaign.scenes.start.on_enter = { damage: 200 };
+    campaign.scenes.start.on_enter = { affect_attributes: { health: -200 } };
     const engine = new GameEngine(campaign);
     const output = engine.start();
     assert.equal(output.isTerminal, true);
@@ -63,13 +65,13 @@ describe('GameEngine.start()', () => {
     const saved = new PlayerState({
       sceneId: 'forest',
       inventory: [],
-      health: 80,
+      attributes: { health: 80 },
       visited: ['start', 'forest'],
       notes: [],
     });
     const output = engine.start(saved);
     assert.equal(output.sceneText, 'You are in the forest.');
-    assert.equal(output.state.health, 80);
+    assert.equal(output.state.attributes.health, 80);
   });
 
   it('start(initialState) re-fires on_enter; item grants are deduplicated', () => {
@@ -79,7 +81,7 @@ describe('GameEngine.start()', () => {
     const saved = new PlayerState({
       sceneId: 'forest',
       inventory: ['magic herb'], // already held
-      health: 100,
+      attributes: { health: 100 },
       visited: ['start', 'forest'],
       notes: [],
     });
@@ -174,7 +176,7 @@ describe('Death handling', () => {
   it('death from choice: sceneText is ""', () => {
     const campaign = makeCampaign();
     campaign.scenes.start.choices = [
-      { label: 'Walk into lava', next: 'lava', damage: 200 },
+      { label: 'Walk into lava', next: 'lava', affect_attributes: { health: -200 } },
     ];
     campaign.scenes.lava = { text: 'Lava scene.', end: true };
     const engine = new GameEngine(campaign);
@@ -187,7 +189,7 @@ describe('Death handling', () => {
 
   it('death from on_enter: sceneText is scene.text', () => {
     const campaign = makeCampaign();
-    campaign.scenes.forest.on_enter = { damage: 200 };
+    campaign.scenes.forest.on_enter = { affect_attributes: { health: -200 } };
     const engine = new GameEngine(campaign);
     const s1 = engine.start();
     const s2 = engine.step(s1.state, '1');
