@@ -21,6 +21,7 @@ import {
   applyItemGrants,
   applyItemRemovals,
   applyNoteGrants,
+  applyRecipes,
   applySceneEvents,
 } from './events.js';
 import { GameOutput, PlayerState } from './state.js';
@@ -79,14 +80,21 @@ export class GameEngine {
     const chosen = available[pick];
     let messages = [];
 
+    const itemWeights = this._campaign.itemWeights ?? {};
+
     // 1. Apply item grants
-    let result = applyItemGrants(chosen, state);
+    let result = applyItemGrants(chosen, state, itemWeights);
     state = result.newState;
     messages.push(...result.messages);
 
     // 1.5 Apply item removals
     result = applyItemRemovals(chosen, state);
     state = result.newState;
+
+    // 1.6 Auto-fire recipes after item changes
+    result = applyRecipes(state, this._campaign.recipes ?? [], itemWeights);
+    state = result.newState;
+    messages.push(...result.messages);
 
     // 2. Apply note grants
     result = applyNoteGrants(chosen, state);
@@ -133,7 +141,13 @@ export class GameEngine {
     const scene = this._scenes[state.sceneId];
 
     // 6. Apply scene entry events (on_enter)
-    let result = applySceneEvents(scene, state);
+    const itemWeights = this._campaign.itemWeights ?? {};
+    let result = applySceneEvents(scene, state, itemWeights);
+    state = result.newState;
+    messages.push(...result.messages);
+
+    // 6.5 Auto-fire recipes after on_enter item changes
+    result = applyRecipes(state, this._campaign.recipes ?? [], itemWeights);
     state = result.newState;
     messages.push(...result.messages);
 

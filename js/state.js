@@ -14,15 +14,17 @@ export class PlayerState {
    * @param {number|null} [opts.health]
    * @param {number|null} [opts.maxHealth]
    * @param {number} [opts.armor]
+   * @param {number|null} [opts.maxCarryWeight]
    * @param {string[]} [opts.visited]
    * @param {string[]} [opts.notes]
    */
-  constructor({ sceneId, inventory = [], health = null, maxHealth = null, armor = 0, visited = [], notes = [] }) {
+  constructor({ sceneId, inventory = [], health = null, maxHealth = null, armor = 0, maxCarryWeight = null, visited = [], notes = [] }) {
     this.sceneId = sceneId;
     this.inventory = inventory;
     this.health = health;
     this.maxHealth = maxHealth;
     this.armor = armor;
+    this.maxCarryWeight = maxCarryWeight;
     this.visited = visited;
     this.notes = notes;
   }
@@ -35,6 +37,7 @@ export class PlayerState {
       health: this.health,
       maxHealth: this.maxHealth,
       armor: this.armor,
+      maxCarryWeight: this.maxCarryWeight,
       visited: [...this.visited],
       notes: [...this.notes],
     });
@@ -48,6 +51,7 @@ export class PlayerState {
       health: this.health,
       max_health: this.maxHealth,
       armor: this.armor,
+      max_carry_weight: this.maxCarryWeight,
       visited: [...this.visited],
       notes: [...this.notes],
     };
@@ -67,6 +71,7 @@ export class PlayerState {
       health: data.health ?? null,
       maxHealth: data.max_health ?? null,
       armor: data.armor ?? 0,
+      maxCarryWeight: data.max_carry_weight ?? null,
       visited: [...(data.visited ?? [])],
       notes: [...(data.notes ?? [])],
     });
@@ -82,12 +87,14 @@ export class PlayerState {
     const rawHealth = def.health;
     const rawMaxHealth = def.max_health;
     const rawArmor = def.armor;
+    const rawMaxCarry = def.max_carry_weight;
     return new PlayerState({
       sceneId: campaign.metadata.start,
       inventory: [...(def.inventory ?? [])],
       health: rawHealth != null ? Number(rawHealth) : null,
       maxHealth: rawMaxHealth != null ? Number(rawMaxHealth) : null,
       armor: rawArmor != null ? Number(rawArmor) : 0,
+      maxCarryWeight: rawMaxCarry != null ? Number(rawMaxCarry) : null,
     });
   }
 }

@@ -15,22 +15,71 @@
 import { PlayerState } from './state.js';
 
 /**
+ * Compute total carry weight from an inventory list and item weight table.
+ * @param {string[]} inventory
+ * @param {object} itemWeights - { itemName: number }
+ * @returns {number}
+ */
+function computeCarryWeight(inventory, itemWeights) {
+  return inventory.reduce((sum, item) => sum + Number(itemWeights[item] ?? 0), 0);
+}
+
+/**
+ * Split items into accepted (fit under maxCarryWeight) and rejected (too heavy).
+ * If maxCarryWeight is null, all items are accepted.
+ * @param {string[]} items
+ * @param {PlayerState} state
+ * @param {object} itemWeights
+ * @returns {{ accepted: string[], rejected: string[] }}
+ */
+function weighedGrant(items, state, itemWeights) {
+  if (state.maxCarryWeight === null) return { accepted: items, rejected: [] };
+
+  const accepted = [];
+  const rejected = [];
+  let running = computeCarryWeight(state.inventory, itemWeights);
+
+  for (const item of items) {
+    const w = Number(itemWeights[item] ?? 0);
+    if (running + w <= state.maxCarryWeight) {
+      accepted.push(item);
+      running += w;
+    } else {
+      rejected.push(item);
+    }
+  }
+  return { accepted, rejected };
+}
+
+/**
  * Add any items granted by a choice to inventory.
- * Skips items already held (deduplication is case/whitespace-sensitive).
+ * Skips items already held. Respects maxCarryWeight if set.
  *
  * @param {object} choice
  * @param {PlayerState} state
+ * @param {object} [itemWeights] - { itemName: number }
  * @returns {{ newState: PlayerState, messages: string[] }}
  */
-export function applyItemGrants(choice, state) {
+export function applyItemGrants(choice, state, itemWeights = {}) {
   const granted = choice.gives_items ?? [];
   const newItems = granted.filter((item) => !state.inventory.includes(item));
 
   if (newItems.length === 0) return { newState: state, messages: [] };
 
+  const { accepted, rejected } = weighedGrant(newItems, state, itemWeights);
+  const messages = [];
+
+  if (rejected.length > 0) {
+    messages.push(`Too heavy to carry: ${rejected.join(', ')}`);
+  }
+  if (accepted.length === 0) {
+    return { newState: state, messages };
+  }
+
   const newState = state.copy();
-  newState.inventory.push(...newItems);
-  return { newState, messages: [`You obtained: ${newItems.join(', ')}`] };
+  newState.inventory.push(...accepted);
+  messages.push(`You obtained: ${accepted.join(', ')}`);
+  return { newState, messages };
 }
 
 /**
@@ -125,9 +174,10 @@ export function applyChoiceHealth(choice, state) {
  *
  * @param {object} scene
  * @param {PlayerState} state
+ * @param {object} [itemWeights] - { itemName: number }
  * @returns {{ newState: PlayerState, messages: string[] }}
  */
-export function applySceneEvents(scene, state) {
+export function applySceneEvents(scene, state, itemWeights = {}) {
   const onEnter = scene.on_enter;
   if (!onEnter) return { newState: state, messages: [] };
 
@@ -139,12 +189,18 @@ export function applySceneEvents(scene, state) {
     messages.push(onEnter.message);
   }
 
-  // Auto-grant items
+  // Auto-grant items (respects carry weight)
   const granted = onEnter.gives_items ?? [];
   const newItems = granted.filter((item) => !newState.inventory.includes(item));
   if (newItems.length > 0) {
-    newState.inventory.push(...newItems);
-    messages.push(`You found: ${newItems.join(', ')}`);
+    const { accepted, rejected } = weighedGrant(newItems, newState, itemWeights);
+    if (accepted.length > 0) {
+      newState.inventory.push(...accepted);
+      messages.push(`You found: ${accepted.join(', ')}`);
+    }
+    if (rejected.length > 0) {
+      messages.push(`Too heavy to carry: ${rejected.join(', ')}`);
+    }
   }
 
   // Auto-remove consumed items
@@ -180,4 +236,58 @@ export function applySceneEvents(scene, state) {
   }
 
   return { newState, messages };
+}
+
+/**
+ * Auto-fire any recipes whose inputs are all present in inventory.
+ * Loops until no recipe fires (handles chains). Consumes inputs and grants
+ * the output item. Respects maxCarryWeight if set.
+ *
+ * Recipe shape: { inputs: string[], output: string, message?: string }
+ *
+ * @param {PlayerState} state
+ * @param {object[]} recipes
+ * @param {object} [itemWeights]
+ * @returns {{ newState: PlayerState, messages: string[] }}
+ */
+export function applyRecipes(state, recipes, itemWeights = {}) {
+  if (!recipes || recipes.length === 0) return { newState: state, messages: [] };
+
+  let current = state;
+  const messages = [];
+  let fired = true;
+
+  while (fired) {
+    fired = false;
+    for (const recipe of recipes) {
+      const inputs = Array.isArray(recipe.inputs) ? recipe.inputs : [];
+      if (inputs.length === 0) continue;
+      if (!inputs.every((item) => current.inventory.includes(item))) continue;
+
+      fired = true;
+      const next = current.copy();
+      next.inventory = next.inventory.filter((item) => !inputs.includes(item));
+
+      const output = recipe.output;
+      if (output && !next.inventory.includes(output)) {
+        const { accepted, rejected } = weighedGrant([output], next, itemWeights);
+        next.inventory.push(...accepted);
+        if (rejected.length > 0) {
+          messages.push(recipe.message ?? `You combined: ${inputs.join(', ')}.`);
+          messages.push(`Too heavy to carry: ${rejected.join(', ')}`);
+          current = next;
+          continue;
+        }
+      }
+
+      if (recipe.message) {
+        messages.push(recipe.message);
+      } else {
+        messages.push(`You combined ${inputs.join(' + ')} → ${output}.`);
+      }
+      current = next;
+    }
+  }
+
+  return { newState: current, messages };
 }

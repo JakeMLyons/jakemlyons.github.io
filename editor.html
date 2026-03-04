@@ -27,6 +27,15 @@
       <div class="drop-zone__error" id="blank-error"></div>
     </div>
 
+    <!-- Draft restore banner (hidden until a draft is found) -->
+    <div id="ed-draft-banner" class="ed-draft-banner hidden">
+      <span id="ed-draft-info" class="ed-draft-banner__info"></span>
+      <div class="ed-draft-banner__actions">
+        <button class="btn btn--small" id="ed-draft-restore">Restore</button>
+        <button class="btn btn--ghost btn--small" id="ed-draft-dismiss">Dismiss</button>
+      </div>
+    </div>
+
     <div class="ed-blank__divider">or</div>
 
     <button class="btn ed-blank__new-btn" id="blank-new-btn">+ New campaign</button>
@@ -51,6 +60,7 @@
       <button class="btn btn--ghost btn--small ed-drawer-toggle" id="ed-val-toggle"
               aria-label="Toggle validation panel">✓</button>
       <!-- Action buttons -->
+      <button class="btn btn--ghost btn--small" id="ed-save-btn" disabled>💾 Save</button>
       <button class="btn btn--ghost btn--small" id="ed-validate-btn">Validate</button>
       <button class="btn btn--ghost btn--small" id="ed-play-btn" disabled>▶ Play</button>
       <button class="btn btn--ghost btn--small" id="ed-zip-btn" disabled>↓ ZIP</button>
@@ -87,6 +97,14 @@
         <div class="ed-nav-section" id="ed-items-section">
           <button class="ed-nav-section__hdr" id="ed-items-nav">
             <span class="ed-nav-section__label">Items</span>
+            <span class="ed-nav-section__chevron" aria-hidden="true"></span>
+          </button>
+        </div>
+
+        <!-- Recipes nav -->
+        <div class="ed-nav-section" id="ed-recipes-section">
+          <button class="ed-nav-section__hdr" id="ed-recipes-nav">
+            <span class="ed-nav-section__label">Recipes</span>
             <span class="ed-nav-section__chevron" aria-hidden="true"></span>
           </button>
         </div>
@@ -162,12 +180,43 @@
             </select>
 
             <label class="ed-label">Health</label>
-            <div class="ed-health-control">
-              <label class="ed-checkbox-label">
-                <input type="checkbox" id="ed-meta-no-health"> No health tracking
+            <div class="ed-toggle-row">
+              <label class="ed-toggle">
+                <input type="checkbox" id="ed-meta-health-enabled">
+                Enable health tracking
               </label>
-              <input class="ed-input ed-input--narrow" type="number" id="ed-meta-health"
-                     min="0" placeholder="100">
+              <input class="ed-input ed-input--narrow hidden" type="number"
+                     id="ed-meta-health" min="0" placeholder="100">
+            </div>
+
+            <label class="ed-label">Max health</label>
+            <div class="ed-toggle-row">
+              <label class="ed-toggle">
+                <input type="checkbox" id="ed-meta-max-health-enabled">
+                Cap healing
+              </label>
+              <input class="ed-input ed-input--narrow hidden" type="number"
+                     id="ed-meta-max-health" min="0" placeholder="100">
+            </div>
+
+            <label class="ed-label">Armor</label>
+            <div class="ed-toggle-row">
+              <label class="ed-toggle">
+                <input type="checkbox" id="ed-meta-armor-enabled">
+                Enable armor
+              </label>
+              <input class="ed-input ed-input--narrow hidden" type="number"
+                     id="ed-meta-armor" min="0" placeholder="0">
+            </div>
+
+            <label class="ed-label">Carry weight limit</label>
+            <div class="ed-toggle-row">
+              <label class="ed-toggle">
+                <input type="checkbox" id="ed-meta-max-carry-enabled">
+                Enable carry weight
+              </label>
+              <input class="ed-input ed-input--narrow hidden" type="number"
+                     id="ed-meta-max-carry" min="0" placeholder="unlimited">
             </div>
 
             <label class="ed-label">Starting inventory</label>
@@ -253,6 +302,19 @@
           </button>
         </section>
 
+        <!-- Recipes registry view -->
+        <section id="ed-recipes-form" class="ed-form-section hidden">
+          <h2 class="ed-form-section__title">Recipes</h2>
+          <p class="ed-form-section__hint">
+            Define crafting recipes — combinations that auto-fire when the player
+            holds all required inputs. Items are consumed and the output is granted.
+          </p>
+          <div id="ed-recipes-list" class="ed-recipes-list"></div>
+          <button class="btn btn--ghost btn--small ed-add-recipe-btn" id="ed-add-recipe">
+            + Add recipe
+          </button>
+        </section>
+
         <!-- Scene graph — shown when Scenes nav is clicked -->
         <section id="ed-scene-graph" class="ed-form-section ed-scene-graph hidden">
           <div class="ed-scene-graph__wrap">
@@ -310,6 +372,9 @@
 
   <!-- Toast notification -->
   <div id="ed-toast" class="ed-toast hidden" role="status" aria-live="polite"></div>
+
+  <!-- Shared item autocomplete list — populated by refreshItemDatalist() -->
+  <datalist id="ed-item-datalist"></datalist>
 
 </div><!-- #editor-shell -->
 

@@ -42,11 +42,16 @@ const blankZipInput    = document.getElementById('blank-zip-input');
 const blankStatus      = document.getElementById('blank-status');
 const blankError       = document.getElementById('blank-error');
 const blankNewBtn      = document.getElementById('blank-new-btn');
+const edDraftBanner  = document.getElementById('ed-draft-banner');
+const edDraftInfo    = document.getElementById('ed-draft-info');
+const edDraftRestore = document.getElementById('ed-draft-restore');
+const edDraftDismiss = document.getElementById('ed-draft-dismiss');
 
 // Top bar
 const edTitle        = document.getElementById('ed-title');
 const edSidebarToggle = document.getElementById('ed-sidebar-toggle');
 const edValToggle    = document.getElementById('ed-val-toggle');
+const edSaveBtn      = document.getElementById('ed-save-btn');
 const edValidateBtn  = document.getElementById('ed-validate-btn');
 const edPlayBtn      = document.getElementById('ed-play-btn');
 const edZipBtn       = document.getElementById('ed-zip-btn');
@@ -82,15 +87,21 @@ const edSceneGraph    = document.getElementById('ed-scene-graph');
 const edSceneGraphSvg = document.getElementById('ed-scene-graph-svg');
 
 // Metadata form fields
-const edMetaTitle     = document.getElementById('ed-meta-title');
-const edMetaAuthor    = document.getElementById('ed-meta-author');
-const edMetaVersion   = document.getElementById('ed-meta-version');
-const edMetaDesc      = document.getElementById('ed-meta-description');
-const edMetaTagsCtr   = document.getElementById('ed-meta-tags-container');
-const edMetaStart     = document.getElementById('ed-meta-start');
-const edMetaNoHealth  = document.getElementById('ed-meta-no-health');
-const edMetaHealth    = document.getElementById('ed-meta-health');
-const edMetaInvCtr    = document.getElementById('ed-meta-inventory-container');
+const edMetaTitle          = document.getElementById('ed-meta-title');
+const edMetaAuthor         = document.getElementById('ed-meta-author');
+const edMetaVersion        = document.getElementById('ed-meta-version');
+const edMetaDesc           = document.getElementById('ed-meta-description');
+const edMetaTagsCtr        = document.getElementById('ed-meta-tags-container');
+const edMetaStart          = document.getElementById('ed-meta-start');
+const edMetaHealthEnabled  = document.getElementById('ed-meta-health-enabled');
+const edMetaHealth         = document.getElementById('ed-meta-health');
+const edMetaMaxHealthEnabled = document.getElementById('ed-meta-max-health-enabled');
+const edMetaMaxHealth      = document.getElementById('ed-meta-max-health');
+const edMetaArmorEnabled   = document.getElementById('ed-meta-armor-enabled');
+const edMetaArmor          = document.getElementById('ed-meta-armor');
+const edMetaMaxCarryEnabled = document.getElementById('ed-meta-max-carry-enabled');
+const edMetaMaxCarry       = document.getElementById('ed-meta-max-carry');
+const edMetaInvCtr         = document.getElementById('ed-meta-inventory-container');
 
 // Scene form fields
 const edSceneIdLabel  = document.getElementById('ed-scene-id-label');
@@ -113,6 +124,12 @@ const edChoicesList    = document.getElementById('ed-choices-list');
 const edItemsList  = document.getElementById('ed-items-list');
 const edAddItem    = document.getElementById('ed-add-item');
 
+// Recipes form
+const edRecipesNav  = document.getElementById('ed-recipes-nav');
+const edRecipesForm = document.getElementById('ed-recipes-form');
+const edRecipesList = document.getElementById('ed-recipes-list');
+const edAddRecipe   = document.getElementById('ed-add-recipe');
+
 // Validation panel
 const edValidation     = document.getElementById('ed-validation');
 const edValidationBody = document.getElementById('ed-validation__body');
@@ -133,6 +150,9 @@ const edSwitchCancel  = document.getElementById('ed-switch-cancel');
 // Toast
 const edToast = document.getElementById('ed-toast');
 
+// Shared item autocomplete datalist
+const edItemDatalist = document.getElementById('ed-item-datalist');
+
 // ─── Initialisation ───────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -147,6 +167,13 @@ document.addEventListener('DOMContentLoaded', () => {
   checkEditorHandoff();
 });
 
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 's' && !editorShell.classList.contains('hidden')) {
+    e.preventDefault();
+    saveDraft();
+  }
+});
+
 // ─── Entry point: BroadcastChannel + localStorage handoff ─────────────────────
 
 function checkEditorHandoff() {
@@ -155,15 +182,20 @@ function checkEditorHandoff() {
   if (url.searchParams.has('edit')) {
     tryLocalStorageHandoff();
   } else if (url.searchParams.has('new')) {
+    localStorage.removeItem('adventure_editor_draft');
     initNewCampaign();
+  } else {
+    // No ?edit or ?new → blank state; check for a saved draft to offer restore
+    checkDraftRestore();
+    showBlank();
   }
-  // No ?edit or ?new → stay on blank state
 }
 
 function tryLocalStorageHandoff() {
   const raw = localStorage.getItem('adventure_pending_edit');
   if (!raw) { showBlank(); return; }
   localStorage.removeItem('adventure_pending_edit');
+  localStorage.removeItem('adventure_editor_draft');
   try {
     const data = JSON.parse(raw);
     if (data?.campaign) receiveCampaignData(data.campaign, data.name ?? '');
@@ -191,6 +223,7 @@ function showShell() {
   editorBlank.classList.add('hidden');
   editorLoading.classList.add('hidden');
   editorShell.classList.remove('hidden');
+  edSaveBtn.disabled = false;
 }
 
 // ─── Campaign loading ─────────────────────────────────────────────────────────
@@ -233,6 +266,7 @@ async function loadFromFiles(files) {
     const filename = path.includes('/') ? path.split('/').pop() : path;
     fileMap.set(filename, text);
   }
+  localStorage.removeItem('adventure_editor_draft');
   codeEdited = false;
   warningAcknowledged = false;
   activeScene = null;
@@ -288,6 +322,25 @@ function initNewCampaign() {
 
 function wireBlankState() {
   blankNewBtn.addEventListener('click', initNewCampaign);
+
+  edDraftRestore.addEventListener('click', async () => {
+    const raw = localStorage.getItem('adventure_editor_draft');
+    if (!raw) return;
+    try {
+      const draft = JSON.parse(raw);
+      const map = new Map(Object.entries(draft.files ?? {}));
+      localStorage.removeItem('adventure_editor_draft');
+      edDraftBanner.classList.add('hidden');
+      await loadFromFileMap(map);
+    } catch (e) {
+      showBlankError('Could not restore draft.');
+    }
+  });
+
+  edDraftDismiss.addEventListener('click', () => {
+    localStorage.removeItem('adventure_editor_draft');
+    edDraftBanner.classList.add('hidden');
+  });
 
   blankBrowseBtn.addEventListener('click', () => blankFolderInput.click());
   blankFolderInput.addEventListener('change', () => {
@@ -399,6 +452,8 @@ function wireResizer() {
 }
 
 function wireTopbar() {
+  edSaveBtn.addEventListener('click', saveDraft);
+
   edValidateBtn.addEventListener('click', () => {
     runValidation();
     edValidation.classList.add('ed-validation--pulse');
@@ -433,6 +488,40 @@ function markDirty() {
 function clearDirty() {
   isDirty = false;
   updateTitle();
+}
+
+function saveDraft() {
+  if (!campaign) return;
+  const map = (mode === 'code') ? fileMap : serialiseCampaign(campaign, fileMap);
+  const draft = {
+    savedAt: new Date().toISOString(),
+    files:   Object.fromEntries(map),
+  };
+  try {
+    localStorage.setItem('adventure_editor_draft', JSON.stringify(draft));
+    showToast('Draft saved.');
+    clearDirty();
+  } catch {
+    showToast('Could not save draft — storage full.');
+  }
+}
+
+function checkDraftRestore() {
+  const raw = localStorage.getItem('adventure_editor_draft');
+  if (!raw) return;
+  try {
+    const draft = JSON.parse(raw);
+    const ts = new Date(draft.savedAt).toLocaleString();
+    edDraftInfo.textContent = `Unsaved draft from ${ts}`;
+    edDraftBanner.classList.remove('hidden');
+  } catch {
+    localStorage.removeItem('adventure_editor_draft');
+  }
+}
+
+async function loadFromFileMap(map) {
+  const files = [...map.entries()].map(([name, text]) => ({ path: name, text }));
+  await loadFromFiles(files);
 }
 
 // ─── Mode toggle wiring ───────────────────────────────────────────────────────
@@ -524,6 +613,7 @@ function activateVisualMode() {
   edModeCode.classList.remove('ed-mode-btn--active');
   edModeCode.setAttribute('aria-selected', 'false');
 
+  refreshItemDatalist();
   populateMetadataForm();
   renderSceneList();
 
@@ -703,15 +793,16 @@ function wireVisualPane() {
     renderSceneList(); // update ▶ marker
     scheduleValidation();
   });
-  edMetaNoHealth.addEventListener('change', () => {
-    if (edMetaNoHealth.checked) {
-      campaign.metadata.default_player_state = campaign.metadata.default_player_state ?? {};
-      delete campaign.metadata.default_player_state.health;
-      edMetaHealth.classList.add('hidden');
-    } else {
-      campaign.metadata.default_player_state = campaign.metadata.default_player_state ?? {};
+  edMetaHealthEnabled.addEventListener('change', () => {
+    const enabled = edMetaHealthEnabled.checked;
+    edMetaHealth.classList.toggle('hidden', !enabled);
+    if (!campaign.metadata.default_player_state) campaign.metadata.default_player_state = {};
+    if (enabled) {
       campaign.metadata.default_player_state.health = Number(edMetaHealth.value) || 100;
-      edMetaHealth.classList.remove('hidden');
+      if (!edMetaHealth.value) edMetaHealth.value = String(campaign.metadata.default_player_state.health);
+    } else {
+      delete campaign.metadata.default_player_state.health;
+      edMetaHealth.value = '';
     }
     scheduleValidation();
   });
@@ -720,12 +811,68 @@ function wireVisualPane() {
     campaign.metadata.default_player_state.health = Number(edMetaHealth.value) || 0;
     scheduleValidation();
   });
+  edMetaMaxHealthEnabled.addEventListener('change', () => {
+    const enabled = edMetaMaxHealthEnabled.checked;
+    edMetaMaxHealth.classList.toggle('hidden', !enabled);
+    if (!campaign.metadata.default_player_state) campaign.metadata.default_player_state = {};
+    if (enabled) {
+      campaign.metadata.default_player_state.max_health = Number(edMetaMaxHealth.value) || 100;
+      if (!edMetaMaxHealth.value) edMetaMaxHealth.value = String(campaign.metadata.default_player_state.max_health);
+    } else {
+      delete campaign.metadata.default_player_state.max_health;
+      edMetaMaxHealth.value = '';
+    }
+    markDirty();
+  });
+  edMetaMaxHealth.addEventListener('input', () => {
+    if (!campaign.metadata.default_player_state) campaign.metadata.default_player_state = {};
+    campaign.metadata.default_player_state.max_health = edMetaMaxHealth.value !== '' ? Number(edMetaMaxHealth.value) : undefined;
+    markDirty();
+  });
+  edMetaArmorEnabled.addEventListener('change', () => {
+    const enabled = edMetaArmorEnabled.checked;
+    edMetaArmor.classList.toggle('hidden', !enabled);
+    if (!campaign.metadata.default_player_state) campaign.metadata.default_player_state = {};
+    if (enabled) {
+      campaign.metadata.default_player_state.armor = Number(edMetaArmor.value) || 0;
+      if (!edMetaArmor.value) edMetaArmor.value = String(campaign.metadata.default_player_state.armor);
+    } else {
+      delete campaign.metadata.default_player_state.armor;
+      edMetaArmor.value = '';
+    }
+    markDirty();
+  });
+  edMetaArmor.addEventListener('input', () => {
+    if (!campaign.metadata.default_player_state) campaign.metadata.default_player_state = {};
+    campaign.metadata.default_player_state.armor = edMetaArmor.value !== '' ? Number(edMetaArmor.value) : undefined;
+    markDirty();
+  });
+  edMetaMaxCarryEnabled.addEventListener('change', () => {
+    const enabled = edMetaMaxCarryEnabled.checked;
+    edMetaMaxCarry.classList.toggle('hidden', !enabled);
+    if (!campaign.metadata.default_player_state) campaign.metadata.default_player_state = {};
+    if (enabled) {
+      campaign.metadata.default_player_state.max_carry_weight = Number(edMetaMaxCarry.value) || 0;
+      if (!edMetaMaxCarry.value) edMetaMaxCarry.value = String(campaign.metadata.default_player_state.max_carry_weight);
+    } else {
+      delete campaign.metadata.default_player_state.max_carry_weight;
+      edMetaMaxCarry.value = '';
+    }
+    markDirty();
+  });
+  edMetaMaxCarry.addEventListener('input', () => {
+    if (!campaign.metadata.default_player_state) campaign.metadata.default_player_state = {};
+    campaign.metadata.default_player_state.max_carry_weight = edMetaMaxCarry.value !== '' ? Number(edMetaMaxCarry.value) : undefined;
+    markDirty();
+  });
 
   // Scene list controls
   edMetaNav.addEventListener('click', showMetadataForm);
   edScenesNav.addEventListener('click', showScenesView);
   edAddSceneBtn.addEventListener('click', addScene);
   edItemsNav.addEventListener('click', showItemsForm);
+  edRecipesNav.addEventListener('click', showRecipesForm);
+  edAddRecipe.addEventListener('click', addRecipeRow);
 
   // Scene form controls
   edSceneRenameBtn.addEventListener('click', openRenameModal);
@@ -778,23 +925,36 @@ function populateMetadataForm() {
   populateStartSelect();
   edMetaStart.value = meta.start ?? '';
 
-  // Health
+  // Health toggle
   const hasHealth = dps.health != null;
-  edMetaNoHealth.checked = !hasHealth;
-  if (hasHealth) {
-    edMetaHealth.value = Number(dps.health);
-    edMetaHealth.classList.remove('hidden');
-  } else {
-    edMetaHealth.value = '';
-    edMetaHealth.classList.add('hidden');
-  }
+  edMetaHealthEnabled.checked = hasHealth;
+  edMetaHealth.classList.toggle('hidden', !hasHealth);
+  edMetaHealth.value = hasHealth ? Number(dps.health) : '';
+
+  // Max health toggle
+  const hasMaxHealth = dps.max_health != null;
+  edMetaMaxHealthEnabled.checked = hasMaxHealth;
+  edMetaMaxHealth.classList.toggle('hidden', !hasMaxHealth);
+  edMetaMaxHealth.value = hasMaxHealth ? Number(dps.max_health) : '';
+
+  // Armor toggle
+  const hasArmor = dps.armor != null;
+  edMetaArmorEnabled.checked = hasArmor;
+  edMetaArmor.classList.toggle('hidden', !hasArmor);
+  edMetaArmor.value = hasArmor ? Number(dps.armor) : '';
+
+  // Carry weight toggle
+  const hasMaxCarry = dps.max_carry_weight != null;
+  edMetaMaxCarryEnabled.checked = hasMaxCarry;
+  edMetaMaxCarry.classList.toggle('hidden', !hasMaxCarry);
+  edMetaMaxCarry.value = hasMaxCarry ? Number(dps.max_carry_weight) : '';
 
   // Inventory pill input
   edMetaInvCtr.innerHTML = '';
   makePillInput(edMetaInvCtr, dps.inventory ?? [], (items) => {
     if (!campaign.metadata.default_player_state) campaign.metadata.default_player_state = {};
     campaign.metadata.default_player_state.inventory = items.length ? items : undefined;
-  });
+  }, 'ed-item-datalist');
 }
 
 function populateStartSelect() {
@@ -1059,11 +1219,13 @@ function selectScene(sceneId) {
   // Activate Scenes nav, deactivate others
   edScenesNav.classList.add('ed-nav-section__hdr--active');
   edItemsNav.classList.remove('ed-nav-section__hdr--active');
+  edRecipesNav.classList.remove('ed-nav-section__hdr--active');
   edMetaNav.classList.remove('ed-nav-section__hdr--active');
   // Show only scene form
   edMetaForm.classList.add('hidden');
   edSceneForm.classList.remove('hidden');
   edItemsForm.classList.add('hidden');
+  edRecipesForm.classList.add('hidden');
   edSceneGraph.classList.add('hidden');
   renderSceneForm(sceneId);
 }
@@ -1073,12 +1235,14 @@ function showScenesView() {
   edScenesNav.classList.add('ed-nav-section__hdr--active');
   edMetaNav.classList.remove('ed-nav-section__hdr--active');
   edItemsNav.classList.remove('ed-nav-section__hdr--active');
+  edRecipesNav.classList.remove('ed-nav-section__hdr--active');
   for (const li of edScenelistList.querySelectorAll('.ed-scenelist__item')) {
     li.classList.remove('ed-scenelist__item--active');
   }
   edMetaForm.classList.add('hidden');
   edSceneForm.classList.add('hidden');
   edItemsForm.classList.add('hidden');
+  edRecipesForm.classList.add('hidden');
   edSceneGraph.classList.remove('hidden');
   renderSceneGraph();
 }
@@ -1087,14 +1251,17 @@ function showMetadataForm() {
   activeScene = null;
   edSceneForm.classList.add('hidden');
   edItemsForm.classList.add('hidden');
+  edRecipesForm.classList.add('hidden');
   edSceneGraph.classList.add('hidden');
   edMetaForm.classList.remove('hidden');
   edScenesNav.classList.remove('ed-nav-section__hdr--active');
   edItemsNav.classList.remove('ed-nav-section__hdr--active');
+  edRecipesNav.classList.remove('ed-nav-section__hdr--active');
   edMetaNav.classList.add('ed-nav-section__hdr--active');
   for (const li of edScenelistList.querySelectorAll('.ed-scenelist__item')) {
     li.classList.remove('ed-scenelist__item--active');
   }
+  refreshItemDatalist();
 }
 
 function addScene() {
@@ -1446,15 +1613,18 @@ function showItemsForm() {
   activeScene = null;
   edItemsNav.classList.add('ed-nav-section__hdr--active');
   edScenesNav.classList.remove('ed-nav-section__hdr--active');
+  edRecipesNav.classList.remove('ed-nav-section__hdr--active');
   edMetaNav.classList.remove('ed-nav-section__hdr--active');
   for (const li of edScenelistList.querySelectorAll('.ed-scenelist__item')) {
     li.classList.remove('ed-scenelist__item--active');
   }
   edMetaForm.classList.add('hidden');
   edSceneForm.classList.add('hidden');
+  edRecipesForm.classList.add('hidden');
   edSceneGraph.classList.add('hidden');
   edItemsForm.classList.remove('hidden');
   renderItemsView();
+  refreshItemDatalist();
 }
 
 function renderItemsView() {
@@ -1549,6 +1719,107 @@ function addItemRow() {
   while (campaign.items[`new_item_${n}`] !== undefined) n++;
   campaign.items[`new_item_${n}`] = '';
   renderItemsView();
+}
+
+// ─── Visual mode: recipes ──────────────────────────────────────────────────────
+
+function showRecipesForm() {
+  activeScene = null;
+  edRecipesNav.classList.add('ed-nav-section__hdr--active');
+  edItemsNav.classList.remove('ed-nav-section__hdr--active');
+  edScenesNav.classList.remove('ed-nav-section__hdr--active');
+  edMetaNav.classList.remove('ed-nav-section__hdr--active');
+  for (const li of edScenelistList.querySelectorAll('.ed-scenelist__item')) {
+    li.classList.remove('ed-scenelist__item--active');
+  }
+  edMetaForm.classList.add('hidden');
+  edSceneForm.classList.add('hidden');
+  edItemsForm.classList.add('hidden');
+  edSceneGraph.classList.add('hidden');
+  edRecipesForm.classList.remove('hidden');
+  renderRecipesView();
+  refreshItemDatalist();
+}
+
+function renderRecipesView() {
+  edRecipesList.innerHTML = '';
+  if (!campaign.recipes) campaign.recipes = [];
+  for (let i = 0; i < campaign.recipes.length; i++) {
+    edRecipesList.appendChild(buildRecipeCard(campaign.recipes[i], i));
+  }
+}
+
+function buildRecipeCard(recipe, index) {
+  const card = document.createElement('div');
+  card.className = 'ed-recipe-card';
+
+  const delBtn = document.createElement('button');
+  delBtn.className = 'ed-recipe-card__delete';
+  delBtn.textContent = '✕';
+  delBtn.title = 'Delete recipe';
+  delBtn.addEventListener('click', () => {
+    campaign.recipes.splice(index, 1);
+    renderRecipesView();
+    markDirty();
+    scheduleValidation();
+  });
+  card.appendChild(delBtn);
+
+  const grid = document.createElement('div');
+  grid.className = 'ed-recipe-card__grid';
+
+  // Inputs
+  const inputsLabel = document.createElement('span');
+  inputsLabel.className = 'ed-recipe-card__label';
+  inputsLabel.textContent = 'Inputs';
+  grid.appendChild(inputsLabel);
+
+  const inputsCtr = document.createElement('div');
+  inputsCtr.className = 'ed-pill-container';
+  makePillInput(inputsCtr, recipe.inputs ?? [], (items) => {
+    recipe.inputs = items;
+    markDirty();
+    scheduleValidation();
+  }, 'ed-item-datalist');
+  grid.appendChild(inputsCtr);
+
+  // Output
+  const outputLabel = document.createElement('span');
+  outputLabel.className = 'ed-recipe-card__label';
+  outputLabel.textContent = 'Output';
+  grid.appendChild(outputLabel);
+
+  const outputInput = makeInput('text', recipe.output ?? '', 'item name');
+  outputInput.setAttribute('list', 'ed-item-datalist');
+  outputInput.addEventListener('input', () => {
+    recipe.output = outputInput.value.trim() || undefined;
+    markDirty();
+    scheduleValidation();
+  });
+  grid.appendChild(outputInput);
+
+  // Message (optional)
+  const msgLabel = document.createElement('span');
+  msgLabel.className = 'ed-recipe-card__label';
+  msgLabel.textContent = 'Message';
+  grid.appendChild(msgLabel);
+
+  const msgInput = makeInput('text', recipe.message ?? '', 'optional craft message');
+  msgInput.addEventListener('input', () => {
+    recipe.message = msgInput.value || undefined;
+    markDirty();
+  });
+  grid.appendChild(msgInput);
+
+  card.appendChild(grid);
+  return card;
+}
+
+function addRecipeRow() {
+  if (!campaign.recipes) campaign.recipes = [];
+  campaign.recipes.push({ inputs: [], output: '' });
+  renderRecipesView();
+  markDirty();
 }
 
 // ─── Validation panel ─────────────────────────────────────────────────────────
@@ -1790,6 +2061,21 @@ function showToast(msg, durationMs = 3000) {
   }, durationMs);
 }
 
+// ─── Item autocomplete ────────────────────────────────────────────────────────
+
+/**
+ * Repopulate the shared #ed-item-datalist with current item names.
+ * Call whenever the items registry changes or a form that uses item inputs is shown.
+ */
+function refreshItemDatalist() {
+  edItemDatalist.innerHTML = '';
+  for (const name of Object.keys(campaign?.items ?? {})) {
+    const opt = document.createElement('option');
+    opt.value = name;
+    edItemDatalist.appendChild(opt);
+  }
+}
+
 // ─── Shared widget: pill input ────────────────────────────────────────────────
 
 /**
@@ -1797,8 +2083,9 @@ function showToast(msg, durationMs = 3000) {
  * @param {HTMLElement} container
  * @param {string[]} initialItems
  * @param {function(string[]): void} onChange
+ * @param {string|null} listId  optional datalist id for autocomplete
  */
-function makePillInput(container, initialItems, onChange) {
+function makePillInput(container, initialItems, onChange, listId = null) {
   let items = [...initialItems];
 
   function render() {
@@ -1824,6 +2111,7 @@ function makePillInput(container, initialItems, onChange) {
     const input = document.createElement('input');
     input.className = 'pill-input';
     input.placeholder = 'Add…';
+    if (listId) input.setAttribute('list', listId);
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ',') {
         e.preventDefault();

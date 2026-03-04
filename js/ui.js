@@ -64,6 +64,8 @@ const hudHealth       = document.getElementById('hud-health');
 const healthValue     = document.getElementById('health-value');
 const hudArmor        = document.getElementById('hud-armor');
 const armorValue      = document.getElementById('armor-value');
+const hudCarry        = document.getElementById('hud-carry');
+const carryValue      = document.getElementById('carry-value');
 
 const journalToggle   = document.getElementById('journal-toggle');
 const journalArrow    = document.getElementById('journal-arrow');
@@ -74,6 +76,11 @@ const journalList     = document.getElementById('journal-list');
 const mapToggle       = document.getElementById('map-toggle');
 const mapArrow        = document.getElementById('map-arrow');
 const mapContent      = document.getElementById('map-content');
+const mapGraph        = document.getElementById('map-graph');
+
+const historyToggle   = document.getElementById('history-toggle');
+const historyArrow    = document.getElementById('history-arrow');
+const historyContent  = document.getElementById('history-content');
 const mapBadge        = document.getElementById('map-badge');
 const mapList         = document.getElementById('map-list');
 
@@ -165,6 +172,7 @@ function startNewGame() {
   // Reset collapsibles
   collapseSection('journal', true);
   collapseSection('map', true);
+  collapseSection('history', true);
 
   const title = campaign.metadata?.title ?? 'Text Adventure';
   gameTitle.textContent = title;
@@ -200,7 +208,45 @@ function renderMessages(messages) {
 }
 
 function renderSceneText(text) {
-  sceneText.textContent = text; // plain text — no Markdown parsing
+  renderRichText(sceneText, text);
+}
+
+/**
+ * Renders text with [effect:content] inline spans into a container element.
+ * Supported effects: shake, glow, flash, large.
+ * Builds DOM nodes directly — never uses innerHTML with raw content.
+ *
+ * @param {HTMLElement} container
+ * @param {string} text
+ */
+function renderRichText(container, text) {
+  container.innerHTML = '';
+  const VALID_EFFECTS = new Set(['shake', 'glow', 'flash', 'large']);
+  const regex = /\[(\w+):([^\]]+)\]/g;
+  let lastIndex = 0;
+  let match;
+
+  while ((match = regex.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      container.appendChild(document.createTextNode(text.slice(lastIndex, match.index)));
+    }
+
+    const [fullMatch, effect, content] = match;
+    if (VALID_EFFECTS.has(effect)) {
+      const span = document.createElement('span');
+      span.className = `ta-fx ta-fx--${effect}`;
+      span.textContent = content;
+      container.appendChild(span);
+    } else {
+      container.appendChild(document.createTextNode(fullMatch));
+    }
+
+    lastIndex = regex.lastIndex;
+  }
+
+  if (lastIndex < text.length) {
+    container.appendChild(document.createTextNode(text.slice(lastIndex)));
+  }
 }
 
 function renderChoicesOrTerminal(output) {
@@ -274,8 +320,12 @@ function renderHUD(state) {
   renderInventory(state);
   renderHealth(state);
   renderArmor(state);
+  renderCarryWeight(state);
   renderJournal(state);
   renderMap(state);
+  if (mapContent.classList.contains('hud-collapsible__content--expanded')) {
+    renderGraph(state);
+  }
 }
 
 function renderInventory(state) {
@@ -353,6 +403,17 @@ function renderArmor(state) {
   }
 }
 
+function renderCarryWeight(state) {
+  if (state.maxCarryWeight === null) {
+    hudCarry.classList.add('hidden');
+  } else {
+    hudCarry.classList.remove('hidden');
+    const weights = campaign?.itemWeights ?? {};
+    const current = state.inventory.reduce((sum, item) => sum + Number(weights[item] ?? 0), 0);
+    carryValue.textContent = `${current} / ${state.maxCarryWeight}`;
+  }
+}
+
 function renderJournal(state) {
   const prevCount = parseInt(journalBadge.textContent, 10) || 0;
   const newCount = state.notes.length;
@@ -410,39 +471,185 @@ function renderMap(state) {
   }
 }
 
+// ─── Scene graph view ─────────────────────────────────────────────────────────
+
+const NODE_W  = 90;
+const NODE_H  = 26;
+const H_GAP   = 48;   // gap between columns
+const V_GAP   = 12;   // gap between rows
+const GRAPH_PAD = 14; // padding around the SVG content
+const SVG_NS  = 'http://www.w3.org/2000/svg';
+
+/**
+ * Compute the set of revealed scenes: all visited scenes plus their immediate
+ * choice destinations (one step ahead, even if not yet visited).
+ */
+function computeRevealedScenes(scenes, visitedSet) {
+  const revealed = new Set(visitedSet);
+  for (const sceneId of visitedSet) {
+    for (const choice of scenes[sceneId]?.choices ?? []) {
+      if (choice.next && choice.next in scenes) revealed.add(choice.next);
+    }
+  }
+  return revealed;
+}
+
+/**
+ * BFS from startId over allowedSet; assigns {col, row} to each allowed scene.
+ * Returns Map<sceneId, {col, row}>. Returns empty Map if startId not in allowedSet.
+ */
+function computeSceneLayout(scenes, startId, allowedSet) {
+  if (!allowedSet || !allowedSet.has(startId)) return new Map();
+  const assigned = new Set([startId]);
+  const colOf = new Map([[startId, 0]]);
+  const colRows = new Map([[0, [startId]]]);
+  const queue = [startId];
+
+  while (queue.length > 0) {
+    const id = queue.shift();
+    const col = colOf.get(id);
+    for (const choice of scenes[id]?.choices ?? []) {
+      const next = choice.next;
+      if (!next || assigned.has(next) || !(next in scenes)) continue;
+      if (!allowedSet.has(next)) continue;
+      assigned.add(next);
+      const nextCol = col + 1;
+      colOf.set(next, nextCol);
+      if (!colRows.has(nextCol)) colRows.set(nextCol, []);
+      colRows.get(nextCol).push(next);
+      queue.push(next);
+    }
+  }
+
+  const positions = new Map();
+  for (const [col, ids] of colRows) {
+    ids.forEach((id, row) => positions.set(id, { col, row }));
+  }
+  return positions;
+}
+
+function renderGraph(state) {
+  mapGraph.innerHTML = '';
+
+  const scenes = campaign?.scenes ?? {};
+  const startId = campaign?.metadata?.start;
+  if (!startId || !(startId in scenes)) return;
+
+  const visited  = new Set(state.visited);
+  const revealed = computeRevealedScenes(scenes, visited);
+  const positions = computeSceneLayout(scenes, startId, revealed);
+  if (positions.size === 0) return;
+
+  const currentId = state.sceneId;
+
+  // SVG dimensions
+  let maxCol = 0, maxRow = 0;
+  for (const { col, row } of positions.values()) {
+    if (col > maxCol) maxCol = col;
+    if (row > maxRow) maxRow = row;
+  }
+  const svgW = GRAPH_PAD + (maxCol + 1) * (NODE_W + H_GAP) - H_GAP + GRAPH_PAD;
+  const svgH = GRAPH_PAD + (maxRow + 1) * (NODE_H + V_GAP) - V_GAP + GRAPH_PAD;
+
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('width', svgW);
+  svg.setAttribute('height', svgH);
+  svg.classList.add('map-graph__svg');
+
+  const nodeLeft  = (col) => GRAPH_PAD + col * (NODE_W + H_GAP);
+  const nodeMidY  = (row) => GRAPH_PAD + row * (NODE_H + V_GAP) + NODE_H / 2;
+
+  // Edges (rendered first so nodes draw on top)
+  for (const [id, { col, row }] of positions) {
+    for (const choice of scenes[id]?.choices ?? []) {
+      const pos = positions.get(choice.next);
+      if (!pos) continue;
+      const x1 = nodeLeft(col) + NODE_W;
+      const y1 = nodeMidY(row);
+      const x2 = nodeLeft(pos.col);
+      const y2 = nodeMidY(pos.row);
+      const mx = (x1 + x2) / 2;
+      const path = document.createElementNS(SVG_NS, 'path');
+      path.setAttribute('d', `M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}`);
+      path.classList.add('map-graph__edge');
+      svg.appendChild(path);
+    }
+  }
+
+  // Nodes
+  for (const [id, { col, row }] of positions) {
+    const x = nodeLeft(col);
+    const y = GRAPH_PAD + row * (NODE_H + V_GAP);
+    const isCurrent = id === currentId;
+    const isVisited = visited.has(id);
+
+    const g = document.createElementNS(SVG_NS, 'g');
+    g.classList.add('map-graph__node');
+    if (isCurrent) g.classList.add('map-graph__node--current');
+    else if (isVisited) g.classList.add('map-graph__node--visited');
+
+    const rect = document.createElementNS(SVG_NS, 'rect');
+    rect.setAttribute('x', x);
+    rect.setAttribute('y', y);
+    rect.setAttribute('width', NODE_W);
+    rect.setAttribute('height', NODE_H);
+    rect.setAttribute('rx', 4);
+    g.appendChild(rect);
+
+    const scene = scenes[id];
+    const rawLabel = scene?.title || scene?.text || id;
+    const label = rawLabel.replace(/\s+/g, ' ').slice(0, 14);
+    const clipped = rawLabel.replace(/\s+/g, ' ').length > 14 ? label + '…' : label;
+
+    const text = document.createElementNS(SVG_NS, 'text');
+    text.setAttribute('x', x + NODE_W / 2);
+    text.setAttribute('y', y + NODE_H / 2 + 4);
+    text.setAttribute('text-anchor', 'middle');
+    text.classList.add('map-graph__label');
+    text.textContent = clipped;
+    g.appendChild(text);
+
+    svg.appendChild(g);
+  }
+
+  mapGraph.appendChild(svg);
+}
+
 // ─── Collapsible sections ─────────────────────────────────────────────────────
+
+function getSectionRefs(name) {
+  if (name === 'journal') return { content: journalContent, arrow: journalArrow, toggle: journalToggle };
+  if (name === 'map')     return { content: mapContent,     arrow: mapArrow,     toggle: mapToggle };
+  if (name === 'history') return { content: historyContent, arrow: historyArrow, toggle: historyToggle };
+  throw new Error(`Unknown section: ${name}`);
+}
 
 function wireCollapsibles() {
   journalToggle.addEventListener('click', () => toggleSection('journal'));
-  mapToggle.addEventListener('click', () => toggleSection('map'));
+  mapToggle.addEventListener('click', () => {
+    toggleSection('map');
+    if (mapContent.classList.contains('hud-collapsible__content--expanded') && currentOutput) {
+      renderGraph(currentOutput.state);
+    }
+  });
+  historyToggle.addEventListener('click', () => toggleSection('history'));
 }
 
 function toggleSection(name) {
-  const content = name === 'journal' ? journalContent : mapContent;
-  const arrow   = name === 'journal' ? journalArrow   : mapArrow;
-  const toggle  = name === 'journal' ? journalToggle  : mapToggle;
-
-  const isExpanded = content.classList.contains('hud-collapsible__content--expanded');
-  if (isExpanded) {
-    collapseSection(name, true);
-  } else {
-    expandSection(name, true);
-  }
+  const { content } = getSectionRefs(name);
+  content.classList.contains('hud-collapsible__content--expanded')
+    ? collapseSection(name, true) : expandSection(name, true);
 }
 
 function expandSection(name, updateArrow) {
-  const content = name === 'journal' ? journalContent : mapContent;
-  const arrow   = name === 'journal' ? journalArrow   : mapArrow;
-  const toggle  = name === 'journal' ? journalToggle  : mapToggle;
+  const { content, arrow, toggle } = getSectionRefs(name);
   content.classList.add('hud-collapsible__content--expanded');
   if (updateArrow) arrow.textContent = '▲';
   toggle.setAttribute('aria-expanded', 'true');
 }
 
 function collapseSection(name, updateArrow) {
-  const content = name === 'journal' ? journalContent : mapContent;
-  const arrow   = name === 'journal' ? journalArrow   : mapArrow;
-  const toggle  = name === 'journal' ? journalToggle  : mapToggle;
+  const { content, arrow, toggle } = getSectionRefs(name);
   content.classList.remove('hud-collapsible__content--expanded');
   if (updateArrow) arrow.textContent = '▼';
   toggle.setAttribute('aria-expanded', 'false');
