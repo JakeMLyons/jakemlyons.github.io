@@ -93,6 +93,12 @@
         <div class="hud-section__value" id="armor-value"></div>
       </div>
 
+      <!-- Carry weight (hidden when maxCarryWeight is null) -->
+      <div class="hud-section hidden" id="hud-carry">
+        <div class="hud-section__label">Weight</div>
+        <div class="hud-section__value" id="carry-value"></div>
+      </div>
+
       <!-- Journal (collapsible) -->
       <div class="hud-collapsible" id="hud-journal-container">
         <button class="hud-collapsible__header" id="journal-toggle" aria-expanded="false">
@@ -107,16 +113,27 @@
         </div>
       </div>
 
-      <!-- History (collapsible) -->
+      <!-- Map (graph — collapsible) -->
       <div class="hud-collapsible" id="hud-map-container">
         <button class="hud-collapsible__header" id="map-toggle" aria-expanded="false">
+          <span class="hud-collapsible__title">Map</span>
+          <span class="hud-collapsible__arrow" id="map-arrow">▼</span>
+        </button>
+        <div class="hud-collapsible__content" id="map-content">
+          <div class="map-graph" id="map-graph"></div>
+        </div>
+      </div>
+
+      <!-- History (list only — collapsible) -->
+      <div class="hud-collapsible" id="hud-history-container">
+        <button class="hud-collapsible__header" id="history-toggle" aria-expanded="false">
           <span class="hud-collapsible__title">
             History
             <span class="hud-badge" id="map-badge">0</span>
           </span>
-          <span class="hud-collapsible__arrow" id="map-arrow">▼</span>
+          <span class="hud-collapsible__arrow" id="history-arrow">▼</span>
         </button>
-        <div class="hud-collapsible__content" id="map-content">
+        <div class="hud-collapsible__content" id="history-content">
           <ul class="map-list" id="map-list"></ul>
         </div>
       </div>

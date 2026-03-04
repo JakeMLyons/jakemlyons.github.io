@@ -81,11 +81,12 @@ export async function loadCampaign(files) {
     );
   }
 
-  // Merge scenes and items from all scene files
+  // Merge scenes, items, and recipes from all scene files
   const mergedScenes = {};
   const sceneSourceFiles = {};
   const mergedItems = {};
   const itemSourceFiles = {};
+  const mergedRecipes = [];
 
   for (const file of sceneFiles) {
     const filename = file.path.substring(rootPrefix.length);
@@ -117,12 +118,33 @@ export async function loadCampaign(files) {
       mergedItems[itemName] = description;
       itemSourceFiles[itemName] = filename;
     }
+
+    // Merge recipes (append; no deduplication — order matters)
+    const recipes = doc.recipes ?? [];
+    if (Array.isArray(recipes)) {
+      mergedRecipes.push(...recipes.filter((r) => r && r.inputs && r.output));
+    }
+  }
+
+  // Normalise items: accept both string values (old format) and
+  // {description, weight} dicts (new format). Always keep campaign.items as
+  // plain strings so existing code (editor, widget, tests) is unaffected.
+  const itemWeights = {};
+  for (const [name, value] of Object.entries(mergedItems)) {
+    if (typeof value === 'object' && value !== null) {
+      mergedItems[name] = String(value.description ?? '');
+      itemWeights[name] = Number(value.weight ?? 0);
+    } else {
+      itemWeights[name] = 0;
+    }
   }
 
   return {
     metadata,
     scenes: mergedScenes,
     items: mergedItems,
+    itemWeights,
+    recipes: mergedRecipes,
   };
 }
 

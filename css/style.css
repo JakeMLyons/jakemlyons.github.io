@@ -586,6 +586,53 @@ body {
   }
 }
 
+/* ── Rich text inline effects ─────────────────────────────────────────────── */
+
+@keyframes ta-fx-shake {
+  0%, 100% { transform: translateX(0); }
+  20%      { transform: translateX(-4px); }
+  40%      { transform: translateX(4px); }
+  60%      { transform: translateX(-2px); }
+  80%      { transform: translateX(2px); }
+}
+
+@keyframes ta-fx-glow {
+  0%, 100% { text-shadow: none; }
+  50%      { text-shadow: 0 0 6px currentColor, 0 0 14px currentColor; }
+}
+
+@keyframes ta-fx-flash {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.1; }
+}
+
+@keyframes ta-fx-large {
+  0%   { transform: scale(1); }
+  30%  { transform: scale(1.45); }
+  100% { transform: scale(1); }
+}
+
+.ta-fx {
+  /* Base — no animation by default (respects prefers-reduced-motion) */
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .ta-fx--shake {
+    display: inline-block;
+    animation: ta-fx-shake 0.5s ease-in-out;
+  }
+  .ta-fx--glow {
+    animation: ta-fx-glow 2s ease-in-out infinite;
+  }
+  .ta-fx--flash {
+    animation: ta-fx-flash 1.5s ease-in-out infinite;
+  }
+  .ta-fx--large {
+    display: inline-block;
+    animation: ta-fx-large 0.7s ease-out;
+  }
+}
+
 .hud-collapsible__arrow {
   font-size: 0.7rem;
   color: var(--ta-text-muted);
@@ -663,6 +710,52 @@ body {
 .map-entry__marker {
   flex-shrink: 0;
   font-size: 0.7rem;
+}
+
+/* ── Scene graph ──────────────────────────────────────────────────────────── */
+
+.map-graph {
+  overflow-x: auto;
+  padding: 0.3em 0;
+}
+
+.map-graph__svg {
+  display: block;
+}
+
+.map-graph__edge {
+  fill: none;
+  stroke: var(--ta-border);
+  stroke-width: 1.5;
+}
+
+.map-graph__node rect {
+  fill: var(--ta-surface);
+  stroke: var(--ta-border);
+  stroke-width: 1;
+}
+
+.map-graph__node--visited rect {
+  fill: var(--ta-surface-raised);
+  stroke: var(--ta-accent);
+}
+
+.map-graph__node--current rect {
+  fill: var(--ta-accent);
+  stroke: var(--ta-accent);
+}
+
+.map-graph__label {
+  font-size: 10px;
+  fill: var(--ta-text-muted);
+}
+
+.map-graph__node--visited .map-graph__label {
+  fill: var(--ta-text);
+}
+
+.map-graph__node--current .map-graph__label {
+  fill: var(--ta-accent-text);
 }
 
 /* ── Help panel ───────────────────────────────────────────────────────────── */

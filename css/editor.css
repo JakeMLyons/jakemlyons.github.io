@@ -42,6 +42,30 @@
   max-width: 200px;
 }
 
+.ed-draft-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 0.55rem 0.75rem;
+  background: var(--ta-surface-raised);
+  border: 1px solid var(--ta-border);
+  border-radius: 4px;
+  font-size: 0.82rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.ed-draft-banner__info {
+  flex: 1;
+  color: var(--ta-text-muted);
+}
+
+.ed-draft-banner__actions {
+  display: flex;
+  gap: 0.4rem;
+}
+
 /* ── Loading state ────────────────────────────────────────────────────────── */
 
 .ed-loading {
@@ -524,7 +548,7 @@
 /* Form field grid */
 .ed-field-grid {
   display: grid;
-  grid-template-columns: 130px 1fr;
+  grid-template-columns: 160px 1fr;
   gap: 0.5em calc(var(--ta-spacing) * 0.75);
   align-items: start;
 }
@@ -595,10 +619,21 @@
   padding-top: 0.4em;
 }
 
-.ed-health-control {
+.ed-toggle-row {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 0.6em;
+  flex-wrap: wrap;
+}
+
+.ed-toggle {
+  display: flex;
+  align-items: center;
   gap: 0.4em;
+  cursor: pointer;
+  font-size: 0.82rem;
+  color: var(--ta-text-muted);
+  white-space: nowrap;
 }
 
 .ed-rename-btn {
@@ -910,6 +945,57 @@ details[open] .ed-collapsible__header::before {
   margin-top: 0.25em;
 }
 
+/* ── Recipes registry ─────────────────────────────────────────────────────── */
+
+.ed-recipes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6em;
+  margin-bottom: var(--ta-spacing);
+}
+
+.ed-recipe-card {
+  border: 1px solid var(--ta-border);
+  border-radius: 4px;
+  padding: 0.5em 0.6em 0.5em 0.6em;
+  position: relative;
+}
+
+.ed-recipe-card__delete {
+  position: absolute;
+  top: 0.35em;
+  right: 0.4em;
+  background: none;
+  border: none;
+  color: var(--ta-text-muted);
+  cursor: pointer;
+  font-size: 0.8rem;
+  padding: 0.1em 0.3em;
+}
+
+.ed-recipe-card__delete:hover {
+  color: var(--ta-danger);
+}
+
+.ed-recipe-card__grid {
+  display: grid;
+  grid-template-columns: 60px 1fr;
+  gap: 0.4em 0.5em;
+  align-items: start;
+  padding-right: 1.5em; /* avoid delete button overlap */
+}
+
+.ed-recipe-card__label {
+  font-size: 0.78rem;
+  color: var(--ta-text-muted);
+  padding-top: 0.45em;
+  white-space: nowrap;
+}
+
+.ed-add-recipe-btn {
+  margin-top: 0.25em;
+}
+
 /* ── Validation panel (right column) ─────────────────────────────────────── */
 
 .ed-validation {
@@ -1103,6 +1189,6 @@ details[open] .ed-collapsible__header::before {
   }
 
   .ed-field-grid {
-    grid-template-columns: 110px 1fr;
+    grid-template-columns: 140px 1fr;
   }
 }
