@@ -303,3 +303,188 @@ describe('Map deduplication', () => {
     assert.deepEqual([...new Set(s3.state.visited)], ['start', 'forest']);
   });
 });
+
+// ─── Assets — Phase 2 ─────────────────────────────────────────────────────────
+
+function makeCampaignWithAssets(overrides = {}) {
+  return {
+    metadata: { title: 'Test', start: 'start', attributes: {}, inventory: [] },
+    scenes: {
+      start: {
+        text: 'You are at the start.',
+        assets: { image: 'shore_img', music: 'calm_music' },
+        choices: [{ label: 'Go forward', next: 'forest' }],
+      },
+      forest: {
+        text: 'You are in the forest.',
+        choices: [{ label: 'Return', next: 'start' }],
+      },
+    },
+    items: {},
+    recipes: [],
+    assets: {
+      images: { shore_img: 'assets/shore.jpg' },
+      music: { calm_music: 'assets/calm.mp3' },
+      sfx: { step: 'assets/step.mp3', click: 'assets/click.mp3' },
+    },
+    ...overrides,
+  };
+}
+
+describe('Assets — GameOutput defaults', () => {
+  it('output.assets defaults to {} when scene has no assets block', () => {
+    const campaign = makeCampaignWithAssets();
+    const engine = new GameEngine(campaign);
+    const s1 = engine.start();
+    const s2 = engine.step(s1.state, '1'); // forest has no assets block
+    assert.deepEqual(s2.assets, {});
+  });
+
+  it('output.sfx defaults to [] when no gives_sfx', () => {
+    const engine = new GameEngine(makeCampaignWithAssets());
+    const output = engine.start();
+    assert.deepEqual(output.sfx, []);
+  });
+});
+
+describe('Assets — _resolveAssets', () => {
+  it('resolves image and music keys to URLs', () => {
+    const engine = new GameEngine(makeCampaignWithAssets());
+    const output = engine.start();
+    assert.equal(output.assets.image, 'assets/shore.jpg');
+    assert.equal(output.assets.music, 'assets/calm.mp3');
+  });
+
+  it('"none" sentinel resolves to null for image', () => {
+    const campaign = makeCampaignWithAssets();
+    campaign.scenes.start.assets = { image: 'none', music: 'calm_music' };
+    const engine = new GameEngine(campaign);
+    const output = engine.start();
+    assert.equal(output.assets.image, null);
+    assert.equal(output.assets.music, 'assets/calm.mp3');
+  });
+
+  it('"none" sentinel resolves to null for music', () => {
+    const campaign = makeCampaignWithAssets();
+    campaign.scenes.start.assets = { image: 'shore_img', music: 'none' };
+    const engine = new GameEngine(campaign);
+    const output = engine.start();
+    assert.equal(output.assets.image, 'assets/shore.jpg');
+    assert.equal(output.assets.music, null);
+  });
+
+  it('JS null resolves to null (programmatic clear)', () => {
+    const campaign = makeCampaignWithAssets();
+    campaign.scenes.start.assets = { image: null };
+    const engine = new GameEngine(campaign);
+    const output = engine.start();
+    assert.equal(output.assets.image, null);
+  });
+
+  it('absent image key is not present in resolved assets', () => {
+    const campaign = makeCampaignWithAssets();
+    campaign.scenes.start.assets = { music: 'calm_music' }; // no image
+    const engine = new GameEngine(campaign);
+    const output = engine.start();
+    assert.equal('image' in output.assets, false);
+    assert.equal(output.assets.music, 'assets/calm.mp3');
+  });
+});
+
+describe('Assets — _resolveSfxKeys', () => {
+  it('sfx from choice gives_sfx (single key)', () => {
+    const campaign = makeCampaignWithAssets();
+    campaign.scenes.start.choices[0].gives_sfx = 'step';
+    const engine = new GameEngine(campaign);
+    const s1 = engine.start();
+    const s2 = engine.step(s1.state, '1');
+    assert.deepEqual(s2.sfx, ['assets/step.mp3']);
+  });
+
+  it('sfx from choice gives_sfx (array of keys)', () => {
+    const campaign = makeCampaignWithAssets();
+    campaign.scenes.start.choices[0].gives_sfx = ['step', 'click'];
+    const engine = new GameEngine(campaign);
+    const s1 = engine.start();
+    const s2 = engine.step(s1.state, '1');
+    assert.deepEqual(s2.sfx, ['assets/step.mp3', 'assets/click.mp3']);
+  });
+
+  it('sfx from on_enter gives_sfx', () => {
+    const campaign = makeCampaignWithAssets();
+    campaign.scenes.forest.on_enter = { gives_sfx: 'click' };
+    const engine = new GameEngine(campaign);
+    const s1 = engine.start();
+    const s2 = engine.step(s1.state, '1');
+    assert.deepEqual(s2.sfx, ['assets/click.mp3']);
+  });
+
+  it('choice sfx and on_enter sfx are concatenated in order', () => {
+    const campaign = makeCampaignWithAssets();
+    campaign.scenes.start.choices[0].gives_sfx = 'step';
+    campaign.scenes.forest.on_enter = { gives_sfx: 'click' };
+    const engine = new GameEngine(campaign);
+    const s1 = engine.start();
+    const s2 = engine.step(s1.state, '1');
+    assert.deepEqual(s2.sfx, ['assets/step.mp3', 'assets/click.mp3']);
+  });
+});
+
+describe('Assets — all GameOutput paths carry assets', () => {
+  it('terminal (end) scene carries assets', () => {
+    const campaign = makeCampaignWithAssets();
+    campaign.scenes.start.choices = [{ label: 'End', next: 'ending' }];
+    campaign.scenes.ending = {
+      text: 'The end.',
+      end: true,
+      assets: { image: 'shore_img' },
+    };
+    const engine = new GameEngine(campaign);
+    const s1 = engine.start();
+    const s2 = engine.step(s1.state, '1');
+    assert.equal(s2.isTerminal, true);
+    assert.equal(s2.terminalReason, 'end');
+    assert.equal(s2.assets.image, 'assets/shore.jpg');
+  });
+
+  it('death from on_enter carries new scene assets', () => {
+    const campaign = makeCampaignWithAssets();
+    campaign.metadata.attributes = { health: { value: 100, min: 0 } };
+    campaign.scenes.forest.on_enter = { affect_attributes: { health: -200 } };
+    campaign.scenes.forest.assets = { image: 'shore_img' };
+    const engine = new GameEngine(campaign);
+    const s1 = engine.start();
+    const s2 = engine.step(s1.state, '1');
+    assert.equal(s2.isTerminal, true);
+    assert.equal(s2.terminalReason, 'death');
+    assert.equal(s2.assets.image, 'assets/shore.jpg');
+  });
+
+  it('death from choice carries current scene assets', () => {
+    const campaign = makeCampaignWithAssets();
+    campaign.metadata.attributes = { health: { value: 100, min: 0 } };
+    campaign.scenes.start.choices = [
+      { label: 'Die', next: 'forest', affect_attributes: { health: -200 } },
+    ];
+    // start scene already has assets: { image: 'shore_img', music: 'calm_music' }
+    const engine = new GameEngine(campaign);
+    const s1 = engine.start();
+    const s2 = engine.step(s1.state, '1');
+    assert.equal(s2.isTerminal, true);
+    assert.equal(s2.terminalReason, 'death');
+    assert.equal(s2.assets.image, 'assets/shore.jpg');
+  });
+
+  it('noChoices scene carries assets', () => {
+    const campaign = makeCampaignWithAssets();
+    campaign.scenes.forest.choices = [
+      { label: 'Locked', next: 'start', requires_item: 'key' },
+    ];
+    campaign.scenes.forest.assets = { music: 'calm_music' };
+    const engine = new GameEngine(campaign);
+    const s1 = engine.start();
+    const s2 = engine.step(s1.state, '1');
+    assert.equal(s2.noChoices, true);
+    assert.equal(s2.assets.music, 'assets/calm.mp3');
+  });
+});

@@ -26,7 +26,7 @@ import { GameOutput, PlayerState } from './state.js';
 
 export class GameEngine {
   /**
-   * @param {{ metadata: object, scenes: object, items: object, recipes: object[] }} campaign
+   * @param {{ metadata: object, scenes: object, items: object, recipes: object[], assets: object }} campaign
    */
   constructor(campaign) {
     this._campaign = campaign;
@@ -75,6 +75,7 @@ export class GameEngine {
     }
 
     const chosen = available[pick];
+    const choiceSfx = this._resolveSfxKeys(chosen.gives_sfx);
     let messages = [];
 
     // 1. Apply item grants
@@ -103,6 +104,8 @@ export class GameEngine {
 
     // 4. Death check after choice effects
     if (result.died) {
+      const currentScene = this._scenes[state.sceneId];
+      const currentAssets = this._resolveAssets(currentScene.assets ?? null);
       return new GameOutput({
         state,
         sceneText: '',
@@ -111,6 +114,8 @@ export class GameEngine {
         isTerminal: true,
         terminalReason: 'death',
         deathMessage: result.deathMessage,
+        assets: currentAssets,
+        sfx: choiceSfx,
       });
     }
 
@@ -119,7 +124,7 @@ export class GameEngine {
     nextState.sceneId = chosen.next;
 
     // 6–10 via _enterScene
-    return this._enterScene(nextState, messages);
+    return this._enterScene(nextState, messages, choiceSfx);
   }
 
   /**
@@ -130,11 +135,17 @@ export class GameEngine {
    *
    * @param {PlayerState} state
    * @param {string[]} priorMessages
+   * @param {string[]} [priorSfx] - sfx URLs resolved from the triggering choice
    * @returns {GameOutput}
    */
-  _enterScene(state, priorMessages) {
+  _enterScene(state, priorMessages, priorSfx = []) {
     const messages = [...priorMessages];
     const scene = this._scenes[state.sceneId];
+
+    // Resolve assets first — before any branching — so all GameOutput paths carry them
+    const sceneAssets = this._resolveAssets(scene.assets ?? null);
+    const enterSfx = this._resolveSfxKeys(scene.on_enter?.gives_sfx);
+    const allSfx = [...priorSfx, ...enterSfx];
 
     // 6. Apply scene entry events (on_enter)
     let result = applySceneEvents(scene, state, this._campaign);
@@ -151,6 +162,8 @@ export class GameEngine {
         isTerminal: true,
         terminalReason: 'death',
         deathMessage: result.deathMessage,
+        assets: sceneAssets,
+        sfx: allSfx,
       });
     }
 
@@ -175,6 +188,8 @@ export class GameEngine {
         messages,
         isTerminal: true,
         terminalReason: 'end',
+        assets: sceneAssets,
+        sfx: allSfx,
       });
     }
 
@@ -189,6 +204,8 @@ export class GameEngine {
         messages,
         isTerminal: false,
         noChoices: true,
+        assets: sceneAssets,
+        sfx: allSfx,
       });
     }
 
@@ -199,6 +216,75 @@ export class GameEngine {
       sceneText,
       choices: choiceLabels,
       messages,
+      assets: sceneAssets,
+      sfx: allSfx,
+    });
+  }
+
+  /**
+   * Resolve a scene's asset references to concrete URLs.
+   *
+   * - null/absent sceneAssetBlock  → returns {} (UI treats absent keys as clear)
+   * - key with value 'none' or JS null → resolved[key] = null (intentional clear)
+   * - key with a string value → looks up registry; undefined if not found (warns)
+   *
+   * @param {object|null} sceneAssetBlock
+   * @returns {{ image?: string|null, music?: string|null }}
+   */
+  _resolveAssets(sceneAssetBlock) {
+    if (!sceneAssetBlock) return {};
+
+    const registry = this._campaign.assets ?? {};
+    const resolved = {};
+
+    if ('image' in sceneAssetBlock) {
+      const raw = sceneAssetBlock.image;
+      const isExplicitClear = raw === 'none' || raw === null;
+      if (isExplicitClear) {
+        resolved.image = null;
+      } else {
+        resolved.image = registry.images?.[raw];
+        if (resolved.image === undefined) {
+          console.warn(`[engine] assets.images key not found: "${raw}"`);
+        }
+      }
+    }
+
+    if ('music' in sceneAssetBlock) {
+      const raw = sceneAssetBlock.music;
+      const isExplicitClear = raw === 'none' || raw === null;
+      if (isExplicitClear) {
+        resolved.music = null;
+      } else {
+        resolved.music = registry.music?.[raw];
+        if (resolved.music === undefined) {
+          console.warn(`[engine] assets.music key not found: "${raw}"`);
+        }
+      }
+    }
+
+    return resolved;
+  }
+
+  /**
+   * Resolve gives_sfx key(s) to concrete URLs from the sfx registry.
+   * Accepts a single key string, an array of key strings, or null/undefined.
+   * Returns an array of resolved URL strings (unknown keys are warned and skipped).
+   *
+   * @param {string|string[]|null|undefined} gives
+   * @returns {string[]}
+   */
+  _resolveSfxKeys(gives) {
+    if (!gives) return [];
+    const keys = Array.isArray(gives) ? gives : [gives];
+    const registry = this._campaign.assets?.sfx ?? {};
+    return keys.flatMap(key => {
+      const url = registry[key];
+      if (!url) {
+        console.warn(`[engine] assets.sfx key not found: "${key}"`);
+        return [];
+      }
+      return [url];
     });
   }
 }

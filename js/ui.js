@@ -39,6 +39,10 @@ let lastRenderedAttributes = {};
 // Prevents double-submission of choices
 let stepping = false;
 
+// Music state
+let currentMusicUrl = null;
+let isMuted = false;
+
 // ─── DOM references ───────────────────────────────────────────────────────────
 
 const gameScreen      = document.getElementById('game-screen');
@@ -55,6 +59,7 @@ const restartConfirm  = document.getElementById('restart-confirm');
 const restartYesBtn   = document.getElementById('restart-yes-btn');
 const restartNoBtn    = document.getElementById('restart-no-btn');
 
+const scenePanel      = document.getElementById('scene-panel');
 const sceneMessages   = document.getElementById('scene-messages');
 const sceneText       = document.getElementById('scene-text');
 const sceneChoices    = document.getElementById('scene-choices');
@@ -79,6 +84,11 @@ const historyContent  = document.getElementById('history-content');
 const mapBadge        = document.getElementById('map-badge');
 const mapList         = document.getElementById('map-list');
 
+const sceneImage      = document.getElementById('scene-image');
+const sceneMusic      = document.getElementById('scene-music');
+const muteBtn         = document.getElementById('mute-btn');
+const musicResumeBtn  = document.getElementById('music-resume-btn');
+
 const loadModal       = document.getElementById('load-modal');
 const loadModalBody   = document.getElementById('load-modal-body');
 const loadModalClose  = document.getElementById('load-modal-close');
@@ -88,6 +98,7 @@ const loadModalClose  = document.getElementById('load-modal-close');
 document.addEventListener('DOMContentLoaded', () => {
   wireButtons();
   wireCollapsibles();
+  wireMedia();
   checkDashboardHandoff();
 });
 
@@ -163,6 +174,7 @@ async function receiveCampaignData(data, name) {
 function startNewGame() {
   engine = new GameEngine(campaign);
   journalAutoExpanded = false;
+  currentMusicUrl = null;
 
   // Reset collapsibles
   collapseSection('journal', true);
@@ -186,6 +198,8 @@ function transitionToGame() {
 function renderOutput(output) {
   currentOutput = output;
 
+  renderAssets(output);
+  renderSfx(output.sfx);
   renderMessages(output.messages);
   renderSceneText(output.sceneText);
   renderChoicesOrTerminal(output);
@@ -307,6 +321,121 @@ function renderChoicesOrTerminal(output) {
 
     sceneChoices.appendChild(btn);
   }
+}
+
+// ─── Asset rendering ──────────────────────────────────────────────────────────
+
+function getVolume() {
+  const v = parseFloat(
+    getComputedStyle(document.documentElement).getPropertyValue('--ta-music-volume')
+  ) || 1.0;
+  return Math.max(0, Math.min(1, v));
+}
+
+function renderAssets(output) {
+  const placement = (
+    getComputedStyle(document.documentElement)
+      .getPropertyValue('--ta-image-placement').trim()
+  ) || 'above';
+
+  const imageUrl = output.assets?.image;
+  const showImage = typeof imageUrl === 'string' && imageUrl.length > 0;
+
+  // Image
+  if (placement === 'none') {
+    sceneImage.classList.remove('scene-image--visible');
+    sceneImage.src = '';
+    scenePanel.style.backgroundImage = '';
+    scenePanel.classList.remove('scene-panel--bg-image');
+  } else if (placement === 'background') {
+    sceneImage.classList.remove('scene-image--visible');
+    sceneImage.src = '';
+    if (showImage) {
+      scenePanel.style.backgroundImage = `url(${JSON.stringify(imageUrl)})`;
+      scenePanel.classList.add('scene-panel--bg-image');
+    } else {
+      scenePanel.style.backgroundImage = '';
+      scenePanel.classList.remove('scene-panel--bg-image');
+    }
+  } else {
+    // 'above' (default)
+    scenePanel.style.backgroundImage = '';
+    scenePanel.classList.remove('scene-panel--bg-image');
+    if (showImage) {
+      sceneImage.src = imageUrl;
+      sceneImage.classList.add('scene-image--visible');
+    } else {
+      sceneImage.classList.remove('scene-image--visible');
+      sceneImage.src = '';
+    }
+  }
+
+  // Music
+  const musicUrl = output.assets?.music;
+  applyMusic(musicUrl);
+}
+
+function applyMusic(musicUrl) {
+  const hasMusic = typeof musicUrl === 'string' && musicUrl.length > 0;
+  if (hasMusic) {
+    if (musicUrl === currentMusicUrl) return; // same track — seamless, do nothing
+    currentMusicUrl = musicUrl;
+    sceneMusic.src = musicUrl;
+    sceneMusic.volume = isMuted ? 0 : getVolume();
+    sceneMusic.play().then(() => {
+      musicResumeBtn.classList.add('hidden');
+    }).catch(() => {
+      musicResumeBtn.classList.remove('hidden');
+    });
+  } else {
+    if (currentMusicUrl !== null) {
+      sceneMusic.pause();
+      sceneMusic.src = '';
+      currentMusicUrl = null;
+    }
+    musicResumeBtn.classList.add('hidden');
+  }
+}
+
+function renderSfx(sfx) {
+  if (!sfx?.length) return;
+  const vol = isMuted ? 0 : getVolume();
+  for (const url of sfx) {
+    const audio = new Audio(url);
+    audio.volume = vol;
+    audio.play().catch(() => {
+      console.warn(`[player] Failed to play sfx: ${url}`);
+    });
+  }
+}
+
+// ─── Media wiring (image onerror, audio error, mute, resume) ─────────────────
+
+function wireMedia() {
+  sceneImage.onerror = () => {
+    console.warn(`[player] Failed to load scene image: ${sceneImage.src}`);
+    sceneImage.classList.remove('scene-image--visible');
+    sceneImage.src = '';
+  };
+
+  sceneMusic.addEventListener('error', () => {
+    console.warn(`[player] Failed to load scene music: ${sceneMusic.src}`);
+    sceneMusic.src = '';
+    currentMusicUrl = null;
+    musicResumeBtn.classList.add('hidden');
+  });
+
+  muteBtn.addEventListener('click', () => {
+    isMuted = !isMuted;
+    muteBtn.textContent = isMuted ? 'Unmute' : 'Mute';
+    sceneMusic.volume = isMuted ? 0 : getVolume();
+  });
+
+  musicResumeBtn.addEventListener('click', () => {
+    sceneMusic.play().then(() => {
+      musicResumeBtn.classList.add('hidden');
+    }).catch(() => {});
+  });
 }
 
 // ─── HUD rendering ────────────────────────────────────────────────────────────

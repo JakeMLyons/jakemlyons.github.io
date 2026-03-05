@@ -121,6 +121,14 @@
           </button>
         </div>
 
+        <!-- Assets nav -->
+        <div class="ed-nav-section" id="ed-assets-section">
+          <button class="ed-nav-section__hdr" id="ed-assets-nav">
+            <span class="ed-nav-section__label">Assets</span>
+            <span class="ed-nav-section__chevron" aria-hidden="true"></span>
+          </button>
+        </div>
+
         <!-- Scenes nav -->
         <div class="ed-nav-section" id="ed-scenes-section">
           <div class="ed-nav-section__hdr-row">
@@ -253,6 +261,23 @@
               <label class="ed-label">Gives notes</label>
               <div id="ed-oe-gives-notes-container" class="ed-notes-list"></div>
 
+              <label class="ed-label">SFX on enter</label>
+              <div id="ed-oe-gives-sfx-container" class="ed-pill-container"></div>
+
+            </div>
+          </details>
+
+          <!-- Scene assets (image / music) -->
+          <details id="ed-scene-assets-details" class="ed-collapsible">
+            <summary class="ed-collapsible__header">Assets</summary>
+            <div class="ed-field-grid ed-collapsible__body">
+
+              <label class="ed-label" for="ed-scene-asset-image">Image</label>
+              <select class="ed-select" id="ed-scene-asset-image"></select>
+
+              <label class="ed-label" for="ed-scene-asset-music">Music</label>
+              <select class="ed-select" id="ed-scene-asset-music"></select>
+
             </div>
           </details>
 
@@ -291,6 +316,17 @@
           <button class="btn btn--ghost btn--small ed-add-recipe-btn" id="ed-add-recipe">
             + Add recipe
           </button>
+        </section>
+
+        <!-- Assets registry view -->
+        <section id="ed-assets-form" class="ed-form-section hidden">
+          <h2 class="ed-form-section__title">Asset Registry</h2>
+          <p class="ed-form-section__hint">
+            Declare image, music, and sound effect assets here. Reference them by key in scene
+            and choice definitions. Keys must be unique within each bucket — <code>none</code>
+            is reserved as an explicit-clear sentinel.
+          </p>
+          <div id="ed-assets-list"></div>
         </section>
 
         <!-- Scene graph — shown when Scenes nav is clicked -->
