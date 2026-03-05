@@ -385,7 +385,7 @@ body {
 
 .scene-image {
   display: none;
-  max-width: 100%;
+  max-width: var(--ta-scene-max-width);
   max-height: 40vh;
   width: 100%;
   object-fit: cover;
