@@ -1139,6 +1139,70 @@ details[open] .ed-collapsible__header::before {
   margin-top: 0.25em;
 }
 
+/* ── Asset registry ───────────────────────────────────────────────────────── */
+
+.ed-asset-bucket {
+  margin-bottom: calc(var(--ta-spacing) * 1.5);
+}
+
+.ed-asset-bucket__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.4em;
+}
+
+.ed-asset-bucket__title {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--ta-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.ed-asset-bucket__empty {
+  font-size: 0.8rem;
+  color: var(--ta-text-muted);
+  font-style: italic;
+  margin: 0;
+}
+
+.ed-asset-bucket__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3em;
+}
+
+.ed-asset-row {
+  display: grid;
+  grid-template-columns: 130px 1fr auto;
+  gap: 0.35em;
+  align-items: center;
+}
+
+.ed-asset-row__key {
+  font-size: 0.82rem;
+}
+
+.ed-asset-row__url {
+  font-size: 0.82rem;
+}
+
+.ed-asset-row__delete {
+  background: none;
+  border: none;
+  color: var(--ta-text-muted);
+  cursor: pointer;
+  padding: 0.15em 0.3em;
+  font-size: 0.8rem;
+  border-radius: 3px;
+}
+
+.ed-asset-row__delete:hover {
+  color: var(--ta-danger);
+  background: var(--ta-surface-raised);
+}
+
 /* ── Validation panel (right column) ─────────────────────────────────────── */
 
 .ed-validation {

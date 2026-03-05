@@ -3,9 +3,11 @@
  *
  * loadCampaign() accepts a { path, text } file list (normalised by the caller
  * from either a folder drop or ZIP extraction) and returns:
- *   { metadata, scenes, items, recipes }
+ *   { metadata, scenes, items, recipes, assets, assetsInMetadata }
  *
- * items shape: { name: { description: string, affect_attributes: object } }
+ * items shape:  { name: { description: string, affect_attributes: object } }
+ * assets shape: { images: { key: url }, music: { key: url }, sfx: { key: url } }
+ * assetsInMetadata: boolean — true if metadata.yaml contained a top-level `assets:` block (should be a warning)
  *
  * validateCampaign() returns an array of { level: 'error'|'warning', message }
  * objects. An empty array means the campaign is valid.
@@ -25,7 +27,7 @@ export const RESERVED_COMMAND_NAMES = new Set([
  * Load and merge a campaign from an array of { path, text } file objects.
  *
  * @param {{ path: string, text: string }[]} files
- * @returns {Promise<{ metadata: object, scenes: object, items: object, recipes: object[] }>}
+ * @returns {Promise<{ metadata: object, scenes: object, items: object, recipes: object[], assets: object }>}
  * @throws {Error} for missing metadata.yaml, no scene files, duplicates, parse errors
  */
 export async function loadCampaign(files) {
@@ -62,6 +64,7 @@ export async function loadCampaign(files) {
     throw new Error(`Could not parse metadata.yaml: ${e.message}`);
   }
   const metadata = metadataDoc.metadata ?? metadataDoc;
+  const assetsInMetadata = Boolean(metadataDoc.assets);
 
   // Collect scene files: all *.yaml at the root level except metadata.yaml
   const sceneFiles = normalised.filter((f) => {
@@ -81,12 +84,14 @@ export async function loadCampaign(files) {
     );
   }
 
-  // Merge scenes, items, and recipes from all scene files
+  // Merge scenes, items, recipes, and assets from all scene files
   const mergedScenes = {};
   const sceneSourceFiles = {};
   const mergedItems = {};
   const itemSourceFiles = {};
   const mergedRecipes = [];
+  const mergedAssets = { images: {}, music: {}, sfx: {} };
+  const assetSourceFiles = {}; // { bucket: { key: filename } }
 
   for (const file of sceneFiles) {
     const filename = file.path.substring(rootPrefix.length);
@@ -124,6 +129,28 @@ export async function loadCampaign(files) {
     if (Array.isArray(recipes)) {
       mergedRecipes.push(...recipes.filter((r) => r && r.inputs && r.output));
     }
+
+    // Merge assets — deep per-bucket; throw immediately on duplicate keys
+    const assetBlock = doc.assets ?? {};
+    for (const [bucket, entries] of Object.entries(assetBlock)) {
+      if (!entries || typeof entries !== 'object') continue;
+      mergedAssets[bucket] ??= {};
+      assetSourceFiles[bucket] ??= {};
+      for (const [key, url] of Object.entries(entries)) {
+        if (key === 'none') {
+          throw new Error(
+            `Asset key "none" is reserved and cannot be used as an asset name (in "${filename}", bucket "${bucket}").`
+          );
+        }
+        if (key in mergedAssets[bucket]) {
+          throw new Error(
+            `Duplicate asset key "${key}" in bucket "${bucket}" found in "${filename}" and "${assetSourceFiles[bucket][key]}".`
+          );
+        }
+        mergedAssets[bucket][key] = String(url ?? '');
+        assetSourceFiles[bucket][key] = filename;
+      }
+    }
   }
 
   // Normalise items: accept both string values (simple format) and
@@ -148,6 +175,8 @@ export async function loadCampaign(files) {
     scenes: mergedScenes,
     items: mergedItems,
     recipes: mergedRecipes,
+    assets: mergedAssets,
+    assetsInMetadata,
   };
 }
 
@@ -163,6 +192,7 @@ export function validateCampaign(campaign) {
   const metadata = campaign.metadata ?? {};
   const itemsRegistry = campaign.items ?? {};
   const attrDefs = metadata.attributes ?? {};
+  const assetRegistry = campaign.assets ?? {};
 
   function err(message) { results.push({ level: 'error', message }); }
   function warn(message) { results.push({ level: 'warning', message }); }
@@ -356,6 +386,115 @@ export function validateCampaign(campaign) {
       warn(
         `Advisory: item '${itemName}' appears in removes_items but is never granted anywhere — removal is always a no-op.`
       );
+    }
+  }
+
+  // ── Asset registry checks ─────────────────────────────────────────────────
+
+  if (campaign.assetsInMetadata) {
+    warn('An "assets" block was found in metadata.yaml — asset declarations should live in a scene YAML file alongside the scenes that reference them.');
+  }
+
+  const IMAGE_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.avif', '.bmp', '.ico']);
+  const AUDIO_EXTENSIONS = new Set(['.mp3', '.ogg', '.wav', '.flac', '.aac', '.m4a', '.opus']);
+  const VALID_KEY_RE = /^[a-zA-Z0-9_]+$/;
+
+  function extOf(url) {
+    const m = String(url).match(/\.([^./?#]+)(?:[?#]|$)/);
+    return m ? '.' + m[1].toLowerCase() : '';
+  }
+
+  // Registry-level checks: reserved key, invalid key name, wrong extension
+  for (const [bucket, entries] of Object.entries(assetRegistry)) {
+    if (!entries || typeof entries !== 'object') continue;
+    for (const [key, url] of Object.entries(entries)) {
+      if (key === 'none') {
+        err(`Asset bucket "${bucket}": key "none" is reserved and cannot be used as an asset name.`);
+        continue;
+      }
+      if (!VALID_KEY_RE.test(key)) {
+        warn(`Asset bucket "${bucket}": key "${key}" contains invalid characters (only letters, digits, and underscores are allowed).`);
+      }
+      const ext = extOf(url);
+      if (bucket === 'images' && ext && !IMAGE_EXTENSIONS.has(ext)) {
+        warn(`Asset "${key}" in images bucket has a non-image extension ("${ext}").`);
+      } else if ((bucket === 'music' || bucket === 'sfx') && ext && !AUDIO_EXTENSIONS.has(ext)) {
+        warn(`Asset "${key}" in ${bucket} bucket has a non-audio extension ("${ext}").`);
+      }
+    }
+  }
+
+  // Scene-level asset reference checks + collect used keys
+  const usedImageKeys = new Set();
+  const usedMusicKeys = new Set();
+  const usedSfxKeys = new Set();
+  const imageKeys = new Set(Object.keys(assetRegistry.images ?? {}));
+  const musicKeys = new Set(Object.keys(assetRegistry.music ?? {}));
+  const sfxKeys = new Set(Object.keys(assetRegistry.sfx ?? {}));
+
+  function checkSfxRef(sfx, context) {
+    const keys = Array.isArray(sfx) ? sfx : [sfx];
+    for (const key of keys) {
+      if (!key) continue;
+      usedSfxKeys.add(key);
+      if (!sfxKeys.has(key)) {
+        err(`${context}: gives_sfx references unknown sfx key "${key}".`);
+      }
+    }
+  }
+
+  for (const [sceneId, scene] of Object.entries(scenes)) {
+    if (typeof scene !== 'object' || scene === null) continue;
+
+    const sceneAssets = scene.assets;
+    if (sceneAssets && typeof sceneAssets === 'object') {
+      if ('image' in sceneAssets) {
+        const key = sceneAssets.image;
+        if (key !== 'none' && key !== null) {
+          usedImageKeys.add(key);
+          if (!imageKeys.has(key)) {
+            err(`Scene '${sceneId}': assets.image references unknown key "${key}".`);
+          }
+        }
+      }
+      if ('music' in sceneAssets) {
+        const key = sceneAssets.music;
+        if (key !== 'none' && key !== null) {
+          usedMusicKeys.add(key);
+          if (!musicKeys.has(key)) {
+            err(`Scene '${sceneId}': assets.music references unknown key "${key}".`);
+          }
+        }
+      }
+    }
+
+    const onEnter = scene.on_enter;
+    if (onEnter?.gives_sfx) {
+      checkSfxRef(onEnter.gives_sfx, `Scene '${sceneId}' on_enter`);
+    }
+
+    for (let i = 0; i < (scene.choices ?? []).length; i++) {
+      const choice = scene.choices[i];
+      if (choice?.gives_sfx) {
+        checkSfxRef(choice.gives_sfx, `Scene '${sceneId}', choice ${i + 1}`);
+      }
+    }
+  }
+
+  // Unused asset warnings
+  for (const key of imageKeys) {
+    if (!usedImageKeys.has(key)) {
+      warn(`Advisory: asset "${key}" in images bucket is declared but never referenced by any scene.`);
+    }
+  }
+  for (const key of musicKeys) {
+    if (!usedMusicKeys.has(key)) {
+      warn(`Advisory: asset "${key}" in music bucket is declared but never referenced by any scene.`);
+    }
+  }
+  for (const key of sfxKeys) {
+    if (!usedSfxKeys.has(key)) {
+      warn(`Advisory: asset "${key}" in sfx bucket is declared but never referenced by any choice or on_enter.`);
     }
   }
 

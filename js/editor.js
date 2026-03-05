@@ -127,6 +127,16 @@ const edRecipesForm = document.getElementById('ed-recipes-form');
 const edRecipesList = document.getElementById('ed-recipes-list');
 const edAddRecipe   = document.getElementById('ed-add-recipe');
 
+// Assets form
+const edAssetsNav  = document.getElementById('ed-assets-nav');
+const edAssetsForm = document.getElementById('ed-assets-form');
+const edAssetsList = document.getElementById('ed-assets-list');
+
+// Scene assets selects
+const edSceneAssetImage  = document.getElementById('ed-scene-asset-image');
+const edSceneAssetMusic  = document.getElementById('ed-scene-asset-music');
+const edOeGivesSfxCtr    = document.getElementById('ed-oe-gives-sfx-container');
+
 // Validation panel
 const edValidation     = document.getElementById('ed-validation');
 const edValidationBody = document.getElementById('ed-validation__body');
@@ -818,6 +828,7 @@ function wireVisualPane() {
   edItemsNav.addEventListener('click', showItemsForm);
   edRecipesNav.addEventListener('click', showRecipesForm);
   edAddRecipe.addEventListener('click', addRecipeRow);
+  edAssetsNav.addEventListener('click', showAssetsForm);
 
   // Scene form controls
   edSceneRenameBtn.addEventListener('click', openRenameModal);
@@ -1074,6 +1085,25 @@ function renderSceneGraph() {
       g.appendChild(preText);
     }
 
+    // Asset badges: 🖼 image, 🎵 music, 🔊 sfx
+    const hasSfx = !!(scene.on_enter?.gives_sfx ||
+      (scene.choices ?? []).some(c => c.gives_sfx));
+    const badges = [];
+    if (scene.assets?.image && scene.assets.image !== 'none') badges.push('\uD83D\uDDBC');
+    if (scene.assets?.music && scene.assets.music !== 'none') badges.push('\uD83C\uDFB5');
+    if (hasSfx) badges.push('\uD83D\uDD0A');
+    if (badges.length > 0) {
+      const badgeText = document.createElementNS(NS, 'text');
+      badgeText.setAttribute('x',         String(NODE_W - 4));
+      badgeText.setAttribute('y',         '13');
+      badgeText.setAttribute('fill',      mutedFill);
+      badgeText.setAttribute('font-size', '9');
+      badgeText.setAttribute('font-family', fontFamily);
+      badgeText.setAttribute('text-anchor', 'end');
+      badgeText.textContent = badges.join('');
+      g.appendChild(badgeText);
+    }
+
     nodesG.appendChild(g);
   }
 
@@ -1138,6 +1168,7 @@ function selectScene(sceneId) {
   edAttributesNav.classList.remove('ed-nav-section__hdr--active');
   edItemsNav.classList.remove('ed-nav-section__hdr--active');
   edRecipesNav.classList.remove('ed-nav-section__hdr--active');
+  edAssetsNav.classList.remove('ed-nav-section__hdr--active');
   edMetaNav.classList.remove('ed-nav-section__hdr--active');
   // Show only scene form
   edMetaForm.classList.add('hidden');
@@ -1145,6 +1176,7 @@ function selectScene(sceneId) {
   edSceneForm.classList.remove('hidden');
   edItemsForm.classList.add('hidden');
   edRecipesForm.classList.add('hidden');
+  edAssetsForm.classList.add('hidden');
   edSceneGraph.classList.add('hidden');
   renderSceneForm(sceneId);
 }
@@ -1156,6 +1188,7 @@ function showScenesView() {
   edMetaNav.classList.remove('ed-nav-section__hdr--active');
   edItemsNav.classList.remove('ed-nav-section__hdr--active');
   edRecipesNav.classList.remove('ed-nav-section__hdr--active');
+  edAssetsNav.classList.remove('ed-nav-section__hdr--active');
   for (const li of edScenelistList.querySelectorAll('.ed-scenelist__item')) {
     li.classList.remove('ed-scenelist__item--active');
   }
@@ -1164,6 +1197,7 @@ function showScenesView() {
   edSceneForm.classList.add('hidden');
   edItemsForm.classList.add('hidden');
   edRecipesForm.classList.add('hidden');
+  edAssetsForm.classList.add('hidden');
   edSceneGraph.classList.remove('hidden');
   renderSceneGraph();
 }
@@ -1174,12 +1208,14 @@ function showMetadataForm() {
   edAttributesForm.classList.add('hidden');
   edItemsForm.classList.add('hidden');
   edRecipesForm.classList.add('hidden');
+  edAssetsForm.classList.add('hidden');
   edSceneGraph.classList.add('hidden');
   edMetaForm.classList.remove('hidden');
   edScenesNav.classList.remove('ed-nav-section__hdr--active');
   edAttributesNav.classList.remove('ed-nav-section__hdr--active');
   edItemsNav.classList.remove('ed-nav-section__hdr--active');
   edRecipesNav.classList.remove('ed-nav-section__hdr--active');
+  edAssetsNav.classList.remove('ed-nav-section__hdr--active');
   edMetaNav.classList.add('ed-nav-section__hdr--active');
   for (const li of edScenelistList.querySelectorAll('.ed-scenelist__item')) {
     li.classList.remove('ed-scenelist__item--active');
@@ -1193,6 +1229,7 @@ function showAttributesForm() {
   edScenesNav.classList.remove('ed-nav-section__hdr--active');
   edItemsNav.classList.remove('ed-nav-section__hdr--active');
   edRecipesNav.classList.remove('ed-nav-section__hdr--active');
+  edAssetsNav.classList.remove('ed-nav-section__hdr--active');
   edAttributesNav.classList.add('ed-nav-section__hdr--active');
   for (const li of edScenelistList.querySelectorAll('.ed-scenelist__item')) {
     li.classList.remove('ed-scenelist__item--active');
@@ -1201,6 +1238,7 @@ function showAttributesForm() {
   edSceneForm.classList.add('hidden');
   edItemsForm.classList.add('hidden');
   edRecipesForm.classList.add('hidden');
+  edAssetsForm.classList.add('hidden');
   edSceneGraph.classList.add('hidden');
   edAttributesForm.classList.remove('hidden');
   renderAttributesEditor();
@@ -1262,7 +1300,8 @@ function renderSceneForm(sceneId) {
   const oe = scene.on_enter ?? {};
   const oeHasContent = !!(oe.message ||
     (oe.affect_attributes && Object.keys(oe.affect_attributes).length > 0) ||
-    oe.gives_items?.length || oe.removes_items?.length || oe.gives_notes?.length);
+    oe.gives_items?.length || oe.removes_items?.length || oe.gives_notes?.length ||
+    oe.gives_sfx);
   edOnEnterDetails.open = oeHasContent;
 
   edOeMessage.value = oe.message ?? '';
@@ -1286,8 +1325,103 @@ function renderSceneForm(sceneId) {
     writeOnEnterField('gives_notes', notes.length ? notes : undefined);
   });
 
+  // on_enter gives_sfx
+  edOeGivesSfxCtr.innerHTML = '';
+  makeSfxPillInput(edOeGivesSfxCtr, normaliseSfxToArray(oe.gives_sfx), (keys) => {
+    writeOnEnterField('gives_sfx', keys.length === 0 ? undefined : keys.length === 1 ? keys[0] : keys);
+  });
+
+  // Scene-level assets (image / music dropdowns)
+  populateAssetSelect(edSceneAssetImage, 'images', scene.assets?.image ?? '');
+  edSceneAssetImage.onchange = () => {
+    writeSceneAssets('image', edSceneAssetImage.value || undefined);
+  };
+  populateAssetSelect(edSceneAssetMusic, 'music', scene.assets?.music ?? '');
+  edSceneAssetMusic.onchange = () => {
+    writeSceneAssets('music', edSceneAssetMusic.value || undefined);
+  };
+
+  // Auto-open assets details if any asset is set
+  const sceneAssetsDetails = document.getElementById('ed-scene-assets-details');
+  if (sceneAssetsDetails) {
+    sceneAssetsDetails.open = !!(scene.assets?.image || scene.assets?.music);
+  }
+
   // Choices
   renderChoicesList(sceneId);
+}
+
+/**
+ * Populate an asset key dropdown for a given bucket.
+ * Options: "— not set —" (empty), all registered keys, "none" (explicit clear).
+ */
+function populateAssetSelect(selectEl, bucket, currentValue) {
+  selectEl.innerHTML = '';
+  const notSetOpt = document.createElement('option');
+  notSetOpt.value = '';
+  notSetOpt.textContent = '— not set —';
+  selectEl.appendChild(notSetOpt);
+
+  const keys = Object.keys(campaign.assets?.[bucket] ?? {});
+  for (const k of keys) {
+    const opt = document.createElement('option');
+    opt.value = k;
+    opt.textContent = k;
+    selectEl.appendChild(opt);
+  }
+
+  const noneOpt = document.createElement('option');
+  noneOpt.value = 'none';
+  noneOpt.textContent = 'none (explicit clear)';
+  selectEl.appendChild(noneOpt);
+
+  selectEl.value = currentValue || '';
+}
+
+function writeSceneAssets(field, value) {
+  if (!activeScene) return;
+  const scene = campaign.scenes[activeScene];
+  if (value === undefined) {
+    if (scene.assets) {
+      delete scene.assets[field];
+      if (Object.keys(scene.assets).length === 0) delete scene.assets;
+    }
+  } else {
+    if (!scene.assets) scene.assets = {};
+    scene.assets[field] = value;
+  }
+  markDirty();
+  scheduleValidation();
+}
+
+/** Normalise gives_sfx (string | string[] | undefined) → string[] */
+function normaliseSfxToArray(gives_sfx) {
+  if (!gives_sfx) return [];
+  return Array.isArray(gives_sfx) ? gives_sfx : [gives_sfx];
+}
+
+/**
+ * Pill input restricted to sfx keys from the asset registry.
+ * Behaves like makePillInput but uses a datalist for autocomplete.
+ */
+function makeSfxPillInput(container, initialKeys, onChange) {
+  makePillInput(container, initialKeys, onChange, 'ed-sfx-datalist');
+  refreshSfxDatalist();
+}
+
+function refreshSfxDatalist() {
+  let dl = document.getElementById('ed-sfx-datalist');
+  if (!dl) {
+    dl = document.createElement('datalist');
+    dl.id = 'ed-sfx-datalist';
+    document.body.appendChild(dl);
+  }
+  dl.innerHTML = '';
+  for (const key of Object.keys(campaign.assets?.sfx ?? {})) {
+    const opt = document.createElement('option');
+    opt.value = key;
+    dl.appendChild(opt);
+  }
 }
 
 function writeOnEnterField(field, value) {
@@ -1521,6 +1655,15 @@ function buildChoiceCard(sceneId, index) {
   });
   addField('Affect attributes', aaCtr);
 
+  // SFX on choice
+  const sfxCtr = document.createElement('div');
+  sfxCtr.className = 'ed-pill-container';
+  makeSfxPillInput(sfxCtr, normaliseSfxToArray(choice.gives_sfx), (keys) => {
+    choice.gives_sfx = keys.length === 0 ? undefined : keys.length === 1 ? keys[0] : keys;
+    scheduleValidation();
+  });
+  addField('SFX', sfxCtr);
+
   body.appendChild(grid);
   card.appendChild(header);
   card.appendChild(body);
@@ -1552,6 +1695,7 @@ function showItemsForm() {
   edAttributesNav.classList.remove('ed-nav-section__hdr--active');
   edScenesNav.classList.remove('ed-nav-section__hdr--active');
   edRecipesNav.classList.remove('ed-nav-section__hdr--active');
+  edAssetsNav.classList.remove('ed-nav-section__hdr--active');
   edMetaNav.classList.remove('ed-nav-section__hdr--active');
   for (const li of edScenelistList.querySelectorAll('.ed-scenelist__item')) {
     li.classList.remove('ed-scenelist__item--active');
@@ -1560,6 +1704,7 @@ function showItemsForm() {
   edAttributesForm.classList.add('hidden');
   edSceneForm.classList.add('hidden');
   edRecipesForm.classList.add('hidden');
+  edAssetsForm.classList.add('hidden');
   edSceneGraph.classList.add('hidden');
   edItemsForm.classList.remove('hidden');
   renderItemsView();
@@ -1787,6 +1932,7 @@ function showRecipesForm() {
   edAttributesNav.classList.remove('ed-nav-section__hdr--active');
   edItemsNav.classList.remove('ed-nav-section__hdr--active');
   edScenesNav.classList.remove('ed-nav-section__hdr--active');
+  edAssetsNav.classList.remove('ed-nav-section__hdr--active');
   edMetaNav.classList.remove('ed-nav-section__hdr--active');
   for (const li of edScenelistList.querySelectorAll('.ed-scenelist__item')) {
     li.classList.remove('ed-scenelist__item--active');
@@ -1795,6 +1941,7 @@ function showRecipesForm() {
   edAttributesForm.classList.add('hidden');
   edSceneForm.classList.add('hidden');
   edItemsForm.classList.add('hidden');
+  edAssetsForm.classList.add('hidden');
   edSceneGraph.classList.add('hidden');
   edRecipesForm.classList.remove('hidden');
   renderRecipesView();
@@ -1880,6 +2027,175 @@ function addRecipeRow() {
   campaign.recipes.push({ inputs: [], output: '' });
   renderRecipesView();
   markDirty();
+}
+
+// ─── Visual mode: asset registry ──────────────────────────────────────────────
+
+function showAssetsForm() {
+  activeScene = null;
+  edAssetsNav.classList.add('ed-nav-section__hdr--active');
+  edMetaNav.classList.remove('ed-nav-section__hdr--active');
+  edAttributesNav.classList.remove('ed-nav-section__hdr--active');
+  edItemsNav.classList.remove('ed-nav-section__hdr--active');
+  edRecipesNav.classList.remove('ed-nav-section__hdr--active');
+  edScenesNav.classList.remove('ed-nav-section__hdr--active');
+  for (const li of edScenelistList.querySelectorAll('.ed-scenelist__item')) {
+    li.classList.remove('ed-scenelist__item--active');
+  }
+  edMetaForm.classList.add('hidden');
+  edAttributesForm.classList.add('hidden');
+  edSceneForm.classList.add('hidden');
+  edItemsForm.classList.add('hidden');
+  edRecipesForm.classList.add('hidden');
+  edSceneGraph.classList.add('hidden');
+  edAssetsForm.classList.remove('hidden');
+  renderAssetsView();
+}
+
+function renderAssetsView() {
+  edAssetsList.innerHTML = '';
+  if (!campaign.assets) campaign.assets = {};
+  edAssetsList.appendChild(buildAssetBucketSection('images', 'Images', '+ Add Image'));
+  edAssetsList.appendChild(buildAssetBucketSection('music', 'Music', '+ Add Track'));
+  edAssetsList.appendChild(buildAssetBucketSection('sfx', 'Sound Effects', '+ Add SFX'));
+}
+
+function buildAssetBucketSection(bucket, label, addLabel) {
+  const section = document.createElement('div');
+  section.className = 'ed-asset-bucket';
+
+  const header = document.createElement('div');
+  header.className = 'ed-asset-bucket__header';
+
+  const title = document.createElement('span');
+  title.className = 'ed-asset-bucket__title';
+  title.textContent = label;
+
+  const addBtn = document.createElement('button');
+  addBtn.className = 'btn btn--ghost btn--small';
+  addBtn.textContent = addLabel;
+  addBtn.addEventListener('click', () => {
+    if (!campaign.assets[bucket]) campaign.assets[bucket] = {};
+    let n = 1;
+    while (campaign.assets[bucket][`new_asset_${n}`] !== undefined) n++;
+    campaign.assets[bucket][`new_asset_${n}`] = '';
+    renderAssetsView();
+    markDirty();
+    scheduleValidation();
+  });
+
+  header.appendChild(title);
+  header.appendChild(addBtn);
+  section.appendChild(header);
+
+  const entries = Object.entries(campaign.assets[bucket] ?? {});
+  if (entries.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'ed-asset-bucket__empty';
+    empty.textContent = 'No assets declared.';
+    section.appendChild(empty);
+  } else {
+    const list = document.createElement('div');
+    list.className = 'ed-asset-bucket__list';
+    for (const [key, url] of entries) {
+      list.appendChild(buildAssetRow(bucket, key, url));
+    }
+    section.appendChild(list);
+  }
+
+  return section;
+}
+
+function buildAssetRow(bucket, key, url) {
+  const row = document.createElement('div');
+  row.className = 'ed-asset-row';
+
+  let currentKey = key;
+
+  const keyInput = makeInput('text', key, 'asset_key');
+  keyInput.className += ' ed-asset-row__key';
+  keyInput.addEventListener('change', () => {
+    const newKey = keyInput.value.trim();
+    if (!newKey || newKey === currentKey) { keyInput.value = currentKey; return; }
+    if (newKey === 'none') {
+      keyInput.value = currentKey;
+      showToast('"none" is a reserved key name.');
+      return;
+    }
+    if (campaign.assets[bucket]?.[newKey] !== undefined) {
+      keyInput.value = currentKey;
+      showToast(`Key "${newKey}" already exists in this bucket.`);
+      return;
+    }
+    const val = campaign.assets[bucket][currentKey];
+    delete campaign.assets[bucket][currentKey];
+    campaign.assets[bucket][newKey] = val;
+    currentKey = newKey;
+    markDirty();
+    scheduleValidation();
+  });
+
+  const urlInput = makeInput('text', url, 'assets/image.jpg');
+  urlInput.className += ' ed-asset-row__url';
+  urlInput.addEventListener('input', () => {
+    campaign.assets[bucket][currentKey] = urlInput.value;
+    markDirty();
+    scheduleValidation();
+  });
+
+  const delBtn = document.createElement('button');
+  delBtn.className = 'ed-asset-row__delete';
+  delBtn.textContent = '✕';
+  delBtn.title = 'Delete asset';
+  delBtn.addEventListener('click', () => {
+    const refs = findAssetReferences(bucket, currentKey);
+    if (refs.length > 0) {
+      const refList = refs.map(r => `  \u2022 ${r}`).join('\n');
+      const msg = `Delete "${currentKey}"?\n\nThis key is referenced by ${refs.length} location${refs.length !== 1 ? 's' : ''}:\n${refList}\n\nDeleting it will leave those scenes with an unknown key (validator error). Delete anyway?`;
+      if (!confirm(msg)) return;
+    }
+    delete campaign.assets[bucket][currentKey];
+    renderAssetsView();
+    markDirty();
+    scheduleValidation();
+  });
+
+  row.appendChild(keyInput);
+  row.appendChild(urlInput);
+  row.appendChild(delBtn);
+  return row;
+}
+
+/**
+ * Find all scene/choice locations that reference a given asset key in the given bucket.
+ * Returns an array of human-readable location strings.
+ */
+function findAssetReferences(bucket, key) {
+  const refs = [];
+  for (const [sceneId, scene] of Object.entries(campaign.scenes ?? {})) {
+    if (bucket === 'images' && scene.assets?.image === key) {
+      refs.push(`${sceneId} (image)`);
+    }
+    if (bucket === 'music' && scene.assets?.music === key) {
+      refs.push(`${sceneId} (music)`);
+    }
+    if (bucket === 'sfx') {
+      if (sfxRefIncludes(scene.on_enter?.gives_sfx, key)) {
+        refs.push(`${sceneId} on_enter`);
+      }
+      for (const choice of scene.choices ?? []) {
+        if (sfxRefIncludes(choice.gives_sfx, key)) {
+          refs.push(`${sceneId} → "${choice.label || '?'}"`);
+        }
+      }
+    }
+  }
+  return refs;
+}
+
+function sfxRefIncludes(gives_sfx, key) {
+  if (!gives_sfx) return false;
+  return Array.isArray(gives_sfx) ? gives_sfx.includes(key) : gives_sfx === key;
 }
 
 // ─── Visual mode: attributes registry editor ──────────────────────────────────

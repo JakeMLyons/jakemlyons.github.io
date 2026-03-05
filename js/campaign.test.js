@@ -189,4 +189,232 @@ describe('loadCampaign()', () => {
     const campaign = await loadCampaign(files);
     assert.ok('start' in campaign.scenes);
   });
+
+  it('returns assets with empty buckets when no assets block present', async () => {
+    const files = [
+      { path: 'metadata.yaml', text: 'metadata:\n  start: start\n' },
+      { path: 'scenes.yaml', text: 'scenes:\n  start:\n    text: Hi.\n    end: true\n' },
+    ];
+    const campaign = await loadCampaign(files);
+    assert.deepEqual(campaign.assets, { images: {}, music: {}, sfx: {} });
+  });
+
+  it('loads assets block and returns resolved registry', async () => {
+    const files = [
+      { path: 'metadata.yaml', text: 'metadata:\n  start: start\n' },
+      {
+        path: 'scenes.yaml',
+        text: 'scenes:\n  start:\n    text: Hi.\n    end: true\nassets:\n  images:\n    bg: assets/bg.jpg\n  music:\n    theme: assets/theme.mp3\n',
+      },
+    ];
+    const campaign = await loadCampaign(files);
+    assert.equal(campaign.assets.images.bg, 'assets/bg.jpg');
+    assert.equal(campaign.assets.music.theme, 'assets/theme.mp3');
+  });
+
+  it('merges assets across multiple files', async () => {
+    const files = [
+      { path: 'metadata.yaml', text: 'metadata:\n  start: start\n' },
+      {
+        path: 'scenes.yaml',
+        text: 'scenes:\n  start:\n    text: Hi.\n    end: true\nassets:\n  images:\n    bg: assets/bg.jpg\n',
+      },
+      {
+        path: 'sfx.yaml',
+        text: 'scenes:\n  other:\n    text: Other.\n    end: true\nassets:\n  sfx:\n    click: assets/click.mp3\n',
+      },
+    ];
+    const campaign = await loadCampaign(files);
+    assert.equal(campaign.assets.images.bg, 'assets/bg.jpg');
+    assert.equal(campaign.assets.sfx.click, 'assets/click.mp3');
+  });
+
+  it('throws on duplicate asset key within the same bucket across files', async () => {
+    const files = [
+      { path: 'metadata.yaml', text: 'metadata:\n  start: start\n' },
+      {
+        path: 'a.yaml',
+        text: 'scenes:\n  start:\n    text: Hi.\n    end: true\nassets:\n  images:\n    bg: a.jpg\n',
+      },
+      {
+        path: 'b.yaml',
+        text: 'scenes:\n  end:\n    text: End.\n    end: true\nassets:\n  images:\n    bg: b.jpg\n',
+      },
+    ];
+    await assert.rejects(
+      () => loadCampaign(files),
+      (e) => e.message.includes('Duplicate asset key "bg"') && e.message.includes('"images"')
+    );
+  });
+
+  it('sets assetsInMetadata true when metadata.yaml has an assets block', async () => {
+    const files = [
+      {
+        path: 'metadata.yaml',
+        text: 'metadata:\n  start: start\nassets:\n  images:\n    bg: bg.jpg\n',
+      },
+      { path: 'scenes.yaml', text: 'scenes:\n  start:\n    text: Hi.\n    end: true\n' },
+    ];
+    const campaign = await loadCampaign(files);
+    assert.equal(campaign.assetsInMetadata, true);
+  });
+
+  it('sets assetsInMetadata false when no assets block in metadata.yaml', async () => {
+    const files = [
+      { path: 'metadata.yaml', text: 'metadata:\n  start: start\n' },
+      {
+        path: 'scenes.yaml',
+        text: 'scenes:\n  start:\n    text: Hi.\n    end: true\nassets:\n  images:\n    bg: bg.jpg\n',
+      },
+    ];
+    const campaign = await loadCampaign(files);
+    assert.equal(campaign.assetsInMetadata, false);
+  });
+
+  it('throws when asset key is named "none"', async () => {
+    const files = [
+      { path: 'metadata.yaml', text: 'metadata:\n  start: start\n' },
+      {
+        path: 'scenes.yaml',
+        text: 'scenes:\n  start:\n    text: Hi.\n    end: true\nassets:\n  images:\n    none: bad.jpg\n',
+      },
+    ];
+    await assert.rejects(
+      () => loadCampaign(files),
+      (e) => e.message.includes('"none"') && e.message.includes('reserved')
+    );
+  });
+});
+
+// ─── validateCampaign — asset checks ─────────────────────────────────────────
+
+describe('validateCampaign() — assets', () => {
+  function makeAssetCampaign() {
+    return {
+      metadata: { start: 'start' },
+      scenes: {
+        start: { text: 'Begin.', choices: [{ label: 'Go', next: 'end' }] },
+        end: { text: 'End.', end: true },
+      },
+      items: {},
+      assets: {
+        images: { bg: 'assets/bg.jpg' },
+        music: { theme: 'assets/theme.mp3' },
+        sfx: { click: 'assets/click.mp3' },
+      },
+    };
+  }
+
+  it('passes for campaign with valid asset references', () => {
+    const campaign = makeAssetCampaign();
+    campaign.scenes.start.assets = { image: 'bg', music: 'theme' };
+    campaign.scenes.start.choices[0].gives_sfx = 'click';
+    const errors = validateCampaign(campaign).filter((r) => r.level === 'error');
+    assert.equal(errors.length, 0);
+  });
+
+  it('reports error for unknown image key in scene.assets', () => {
+    const campaign = makeAssetCampaign();
+    campaign.scenes.start.assets = { image: 'ghost_image' };
+    const errors = validateCampaign(campaign).filter((r) => r.level === 'error');
+    assert.ok(errors.some((r) => r.message.includes('"ghost_image"')));
+  });
+
+  it('reports error for unknown music key in scene.assets', () => {
+    const campaign = makeAssetCampaign();
+    campaign.scenes.start.assets = { music: 'ghost_music' };
+    const errors = validateCampaign(campaign).filter((r) => r.level === 'error');
+    assert.ok(errors.some((r) => r.message.includes('"ghost_music"')));
+  });
+
+  it('reports error for unknown sfx key on choice.gives_sfx', () => {
+    const campaign = makeAssetCampaign();
+    campaign.scenes.start.choices[0].gives_sfx = 'ghost_sfx';
+    const errors = validateCampaign(campaign).filter((r) => r.level === 'error');
+    assert.ok(errors.some((r) => r.message.includes('"ghost_sfx"')));
+  });
+
+  it('reports error for unknown sfx key on on_enter.gives_sfx', () => {
+    const campaign = makeAssetCampaign();
+    campaign.scenes.start.on_enter = { gives_sfx: 'ghost_sfx' };
+    const errors = validateCampaign(campaign).filter((r) => r.level === 'error');
+    assert.ok(errors.some((r) => r.message.includes('"ghost_sfx"')));
+  });
+
+  it('accepts none as image/music sentinel — no error', () => {
+    const campaign = makeAssetCampaign();
+    campaign.scenes.start.assets = { image: 'none', music: 'none' };
+    const errors = validateCampaign(campaign).filter((r) => r.level === 'error');
+    assert.equal(errors.length, 0);
+  });
+
+  it('warns on non-image extension in images bucket', () => {
+    const campaign = makeAssetCampaign();
+    campaign.assets.images.bad = 'assets/oops.mp3';
+    // mark it as used so unused warning doesn't fire
+    campaign.scenes.end.assets = { image: 'bad' };
+    const warnings = validateCampaign(campaign).filter((r) => r.level === 'warning');
+    assert.ok(warnings.some((r) => r.message.includes('"bad"') && r.message.includes('non-image')));
+  });
+
+  it('warns on non-audio extension in music bucket', () => {
+    const campaign = makeAssetCampaign();
+    campaign.assets.music.bad = 'assets/oops.png';
+    campaign.scenes.end.assets = { music: 'bad' };
+    const warnings = validateCampaign(campaign).filter((r) => r.level === 'warning');
+    assert.ok(warnings.some((r) => r.message.includes('"bad"') && r.message.includes('non-audio')));
+  });
+
+  it('warns on invalid key name with spaces', () => {
+    const campaign = makeAssetCampaign();
+    campaign.assets.images['my bg'] = 'assets/bg.jpg';
+    const warnings = validateCampaign(campaign).filter((r) => r.level === 'warning');
+    assert.ok(warnings.some((r) => r.message.includes('"my bg"') && r.message.includes('invalid characters')));
+  });
+
+  it('warns on unused declared asset', () => {
+    const campaign = makeAssetCampaign();
+    // bg, theme, click are declared but never referenced
+    const warnings = validateCampaign(campaign).filter((r) => r.level === 'warning');
+    assert.ok(warnings.some((r) => r.message.includes('"bg"') && r.message.includes('never referenced')));
+  });
+
+  it('no unused warning when asset is referenced', () => {
+    const campaign = makeAssetCampaign();
+    campaign.scenes.start.assets = { image: 'bg', music: 'theme' };
+    campaign.scenes.start.choices[0].gives_sfx = 'click';
+    const warnings = validateCampaign(campaign).filter(
+      (r) => r.level === 'warning' && r.message.includes('never referenced')
+    );
+    assert.equal(warnings.length, 0);
+  });
+
+  it('warns when assetsInMetadata is true', () => {
+    const campaign = makeAssetCampaign();
+    campaign.assetsInMetadata = true;
+    // Mark declared assets as used so we only see the metadata warning
+    campaign.scenes.start.assets = { image: 'bg', music: 'theme' };
+    campaign.scenes.start.choices[0].gives_sfx = 'click';
+    const warnings = validateCampaign(campaign).filter((r) => r.level === 'warning');
+    assert.ok(warnings.some((r) => r.message.includes('metadata.yaml') && r.message.includes('assets')));
+  });
+
+  it('no metadata.yaml assets warning when assetsInMetadata is false', () => {
+    const campaign = makeAssetCampaign();
+    campaign.assetsInMetadata = false;
+    campaign.scenes.start.assets = { image: 'bg', music: 'theme' };
+    campaign.scenes.start.choices[0].gives_sfx = 'click';
+    const warnings = validateCampaign(campaign).filter(
+      (r) => r.level === 'warning' && r.message.includes('metadata.yaml')
+    );
+    assert.equal(warnings.length, 0);
+  });
+
+  it('accepts gives_sfx as an array and validates all keys', () => {
+    const campaign = makeAssetCampaign();
+    campaign.scenes.start.choices[0].gives_sfx = ['click', 'missing_key'];
+    const errors = validateCampaign(campaign).filter((r) => r.level === 'error');
+    assert.ok(errors.some((r) => r.message.includes('"missing_key"')));
+    assert.ok(!errors.some((r) => r.message.includes('"click"')));
+  });
 });

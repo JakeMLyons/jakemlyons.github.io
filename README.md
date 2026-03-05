@@ -90,7 +90,7 @@ Open **editor.html** to create or edit campaigns. Two modes are available, switc
 
 **Code mode** — Write and edit raw YAML directly. A file-tree sidebar lets you switch between files in multi-file campaigns. Line numbers are shown alongside the editor. Good for experienced authors who prefer full control.
 
-**Visual mode** — Edit metadata, scenes, and item descriptions using forms. No YAML knowledge required. The sidebar has three sections — **Metadata**, **Items**, and **Scenes** — each opening the relevant form. Clicking **Scenes** shows a flow diagram of how all scenes connect; click any node to open that scene's editor.
+**Visual mode** — Edit metadata, attributes, scenes, item descriptions, and assets using forms. No YAML knowledge required. The sidebar has sections — **Metadata**, **Attributes**, **Items**, **Assets**, and **Scenes** — each opening the relevant form. Clicking **Scenes** shows a flow diagram of how all scenes connect; click any node to open that scene's editor.
 
 Both modes work on the same in-memory campaign. Switching modes converts the data between representations automatically.
 
@@ -183,6 +183,62 @@ items:
 - `affect_attributes` on a choice applies numeric deltas to named attributes. If any attribute reaches its declared `min`, the game ends before entering the next scene.
 - `on_enter` on a scene fires automatically on arrival — useful for traps, automatic discoveries, and environmental effects. It also supports `affect_attributes`.
 - Omitting the `attributes:` block in `metadata.yaml` disables all stat tracking for the entire campaign.
+
+### Assets (images, music, sound effects)
+
+Campaigns can optionally declare media assets in an `assets.yaml` file (or any scene YAML file). Assets are registered once in typed buckets and referenced by key from individual scenes and choices.
+
+**assets.yaml:**
+
+```yaml
+assets:
+  images:
+    shore_stormy:      "assets/shore-stormy.jpg"
+    lighthouse_inside: "assets/lighthouse-inside.jpg"
+  music:
+    wind_and_waves:    "assets/wind-and-waves.mp3"
+    iron_creak:        "assets/iron-creak.mp3"
+  sfx:
+    chest_creak:       "assets/sfx/chest-creak.mp3"
+    coin_jingle:       "assets/sfx/coins.mp3"
+```
+
+Asset keys follow the same conventions as item names: lowercase, underscores, unique within their bucket. The key `none` is reserved.
+
+**Scene-level assets** — declare which image to show and which music to loop on entry:
+
+```yaml
+  shore:
+    text: "You claw your way onto wet rocks..."
+    assets:
+      image: shore_stormy    # key from assets.images
+      music: wind_and_waves  # key from assets.music
+```
+
+Set a value to `none` to explicitly clear the image or silence the music on a scene:
+
+```yaml
+  dream_sequence:
+    text: "Everything goes white and silent..."
+    assets:
+      image: none
+      music: none
+```
+
+**Sound effects** — one-shot audio triggered on a choice or scene entry, via `gives_sfx`:
+
+```yaml
+  treasury:
+    text: "The chest swings open."
+    on_enter:
+      gives_sfx: chest_creak         # plays on entry
+    choices:
+      - label: "Take the gold"
+        next: escape_hall
+        gives_sfx: coin_jingle       # plays when this choice is made
+```
+
+`gives_sfx` accepts a single key string or a list of keys (all play simultaneously). Assets are entirely optional — omitting the `assets` block on a scene clears any image and stops any music.
 
 ---
 

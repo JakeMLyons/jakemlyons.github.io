@@ -21,7 +21,7 @@
  * recipes: block is appended to the file that originally contained it, or to
  * recipes.yaml if no recipes were present on load.
  *
- * @param {{ metadata: object, scenes: object, items: object, recipes: Array }} campaign
+ * @param {{ metadata: object, scenes: object, items: object, recipes: Array, assets: object }} campaign
  * @param {Map<string, string>|null} originalFileMap  previous file map for provenance; null = single-file mode
  * @returns {Map<string, string>}  filename → YAML text
  */
@@ -36,6 +36,7 @@ export function serialiseCampaign(campaign, originalFileMap) {
   const scenes   = campaign.scenes   ?? {};
   const items    = campaign.items    ?? {};
   const recipes  = campaign.recipes  ?? [];
+  const assets   = campaign.assets   ?? {};
 
   // ── 1. Serialise metadata.yaml ──────────────────────────────────────────────
 
@@ -82,6 +83,16 @@ export function serialiseCampaign(campaign, originalFileMap) {
     for (const [filename, text] of originalFileMap) {
       if (filename === 'metadata.yaml') continue;
       if (/^recipes:/m.test(text)) { recipesFile = filename; break; }
+    }
+  }
+
+  // ── 3c. Determine assets→file assignment ────────────────────────────────────
+
+  let assetsFile = 'assets.yaml'; // default
+  if (originalFileMap && originalFileMap.size > 0) {
+    for (const [filename, text] of originalFileMap) {
+      if (filename === 'metadata.yaml') continue;
+      if (/^assets:/m.test(text)) { assetsFile = filename; break; }
     }
   }
 
@@ -145,6 +156,12 @@ export function serialiseCampaign(campaign, originalFileMap) {
       fileContent += '\n' + yaml.dump({ recipes: recipes.map(buildRecipeObj) }, dumpOpts);
     }
 
+    // Append assets block to the designated file
+    const assetsOut = buildAssetsObj(assets);
+    if (filename === assetsFile && assetsOut) {
+      fileContent += '\n' + yaml.dump({ assets: assetsOut }, dumpOpts);
+    }
+
     result.set(filename, fileContent);
   }
 
@@ -161,6 +178,12 @@ export function serialiseCampaign(campaign, originalFileMap) {
   // If recipes are assigned to a file that doesn't exist yet, create standalone recipes file.
   if (!result.has(recipesFile) && recipes.length > 0) {
     result.set(recipesFile, header + yaml.dump({ recipes: recipes.map(buildRecipeObj) }, dumpOpts));
+  }
+
+  // If assets are assigned to a file that doesn't exist yet, create standalone assets file.
+  const assetsOut = buildAssetsObj(assets);
+  if (!result.has(assetsFile) && assetsOut) {
+    result.set(assetsFile, header + yaml.dump({ assets: assetsOut }, dumpOpts));
   }
 
   return result;
@@ -203,6 +226,9 @@ function buildSceneObj(s) {
   // text is always emitted (even empty string) so scenes are valid stubs
   obj.text = s.text ?? '';
 
+  const sa = buildSceneAssetsObj(s.assets);
+  if (sa) obj.assets = sa;
+
   const oe = buildOnEnterObj(s.on_enter);
   if (oe) obj.on_enter = oe;
 
@@ -216,6 +242,18 @@ function buildSceneObj(s) {
   return obj;
 }
 
+function buildSceneAssetsObj(assets) {
+  if (!assets || typeof assets !== 'object') return null;
+  const obj = {};
+  if ('image' in assets) {
+    obj.image = (assets.image === null || assets.image === undefined) ? 'none' : String(assets.image);
+  }
+  if ('music' in assets) {
+    obj.music = (assets.music === null || assets.music === undefined) ? 'none' : String(assets.music);
+  }
+  return Object.keys(obj).length ? obj : null;
+}
+
 function buildOnEnterObj(oe) {
   if (!oe) return null;
   const obj = {};
@@ -225,6 +263,8 @@ function buildOnEnterObj(oe) {
   if (oe.gives_items?.length)   obj.gives_items   = oe.gives_items;
   if (oe.removes_items?.length) obj.removes_items = oe.removes_items;
   if (oe.gives_notes?.length)   obj.gives_notes   = oe.gives_notes;
+  const sfx = serialiseGivesSfx(oe.gives_sfx);
+  if (sfx !== null)              obj.gives_sfx     = sfx;
   return Object.keys(obj).length ? obj : null;
 }
 
@@ -240,7 +280,29 @@ function buildChoiceObj(c) {
   if (c.gives_notes?.length)      obj.gives_notes    = c.gives_notes;
   const aa = buildAffectAttributesObj(c.affect_attributes);
   if (aa)                         obj.affect_attributes = aa;
+  const sfx = serialiseGivesSfx(c.gives_sfx);
+  if (sfx !== null)               obj.gives_sfx      = sfx;
   return obj;
+}
+
+function serialiseGivesSfx(sfx) {
+  if (!sfx) return null;
+  if (Array.isArray(sfx)) {
+    if (sfx.length === 0) return null;
+    return sfx.length === 1 ? sfx[0] : sfx;
+  }
+  return sfx; // already a string
+}
+
+function buildAssetsObj(assets) {
+  if (!assets || typeof assets !== 'object') return null;
+  const obj = {};
+  for (const [bucket, entries] of Object.entries(assets)) {
+    if (entries && typeof entries === 'object' && Object.keys(entries).length > 0) {
+      obj[bucket] = { ...entries };
+    }
+  }
+  return Object.keys(obj).length ? obj : null;
 }
 
 function buildAffectAttributesObj(aa) {
