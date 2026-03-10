@@ -528,7 +528,8 @@ function renderAttributes(state) {
   const attrDefs = campaign?.attributes ?? campaign?.metadata?.attributes ?? {};
   const attrEntries = Object.entries(attrDefs);
 
-  if (attrEntries.length === 0) {
+  const visibleEntries = attrEntries.filter(([, def]) => !def.is_hidden);
+  if (visibleEntries.length === 0) {
     hudAttributesContainer.classList.add('hidden');
     return;
   }
@@ -536,7 +537,7 @@ function renderAttributes(state) {
   hudAttributesContainer.classList.remove('hidden');
   attributesContent.innerHTML = '';
 
-  for (const [attrName, def] of attrEntries) {
+  for (const [attrName, def] of visibleEntries) {
     const val = state.attributes?.[attrName] ?? 0;
     const label = def.label || attrName;
 

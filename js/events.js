@@ -121,8 +121,9 @@ export function applyAttributeEffects(data, state, campaign) {
           died = true;
           deathMessage = def.min_message ?? null;
         }
-      } else if (def.max != null && rawVal >= Number(def.max) && def.max_scene) {
-        triggerScene = def.max_scene;
+      } else if (def.max != null && rawVal >= Number(def.max)) {
+        if (def.max_message) messages.push(def.max_message);
+        if (def.max_scene) triggerScene = def.max_scene;
       }
     }
   }

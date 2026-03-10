@@ -98,6 +98,9 @@ const edFlowContextMenu = document.getElementById('ed-flow-context-menu');
 // Choice context menu (shown on right-click of an edge)
 const edFlowChoiceContextMenu = document.getElementById('ed-flow-choice-context-menu');
 
+// File tree context menu (shown on right-click of a file in code mode)
+const edFileContextMenu = document.getElementById('ed-file-context-menu');
+
 // Metadata form fields
 const edMetaTitle          = document.getElementById('ed-meta-title');
 const edMetaAuthor         = document.getElementById('ed-meta-author');
@@ -783,6 +786,11 @@ function renderFileTree() {
     }
 
     li.addEventListener('click', () => selectFile(filename));
+    li.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      hideFileContextMenu();
+      showFileContextMenu(filename, e.clientX, e.clientY);
+    });
     edFiletreeList.appendChild(li);
   }
 }
@@ -1668,12 +1676,12 @@ function buildChoiceCard(sceneId, index) {
   const grid = document.createElement('div');
   grid.className = 'ed-field-grid';
 
-  function addField(labelText, element) {
+  function addField(labelText, element, targetGrid = grid) {
     const lbl = document.createElement('label');
     lbl.className = 'ed-label';
     lbl.textContent = labelText;
-    grid.appendChild(lbl);
-    grid.appendChild(element);
+    targetGrid.appendChild(lbl);
+    targetGrid.appendChild(element);
   }
 
   // Label
@@ -1721,7 +1729,65 @@ function buildChoiceCard(sceneId, index) {
   nextWrap.appendChild(goBtn);
   addField('Next scene', nextWrap);
 
-  // Requires items — merge requires_item (single) and requires_items (array) into one pill list
+  // Gives notes — below Next scene, above SFX and Items group
+  const givesNotesCtr = document.createElement('div');
+  givesNotesCtr.className = 'ed-notes-list';
+  makeNotesList(givesNotesCtr, choice.gives_notes ?? [], (notes) => {
+    choice.gives_notes = notes.length ? notes : undefined;
+  });
+  addField('Gives notes', givesNotesCtr);
+
+  // SFX — below Gives notes, above Items group
+  const sfxCtr = document.createElement('div');
+  sfxCtr.className = 'ed-pill-container';
+  makeSfxPillInput(sfxCtr, normaliseSfxToArray(choice.gives_sfx), (keys) => {
+    choice.gives_sfx = keys.length === 0 ? undefined : keys.length === 1 ? keys[0] : keys;
+    scheduleValidation();
+  });
+  addField('SFX', sfxCtr);
+
+  // Helper: create a collapsible section group spanning full width inside the main grid
+  function makeGroup(title, startOpen) {
+    const hdr = document.createElement('div');
+    hdr.className = 'ed-choice-group__header';
+
+    const titleSpan = document.createElement('span');
+    titleSpan.textContent = title;
+
+    const toggleBtn = document.createElement('button');
+    toggleBtn.className = 'ed-collapsible__toggle';
+    toggleBtn.type = 'button';
+    toggleBtn.textContent = startOpen ? '−' : '+';
+
+    hdr.appendChild(titleSpan);
+    hdr.appendChild(toggleBtn);
+    grid.appendChild(hdr);
+
+    const body = document.createElement('div');
+    body.className = 'ed-choice-group__body';
+    body.style.display = startOpen ? '' : 'none';
+
+    const innerGrid = document.createElement('div');
+    innerGrid.className = 'ed-field-grid';
+    body.appendChild(innerGrid);
+    grid.appendChild(body);
+
+    toggleBtn.addEventListener('click', () => {
+      const isOpen = body.style.display !== 'none';
+      body.style.display = isOpen ? 'none' : '';
+      toggleBtn.textContent = isOpen ? '+' : '−';
+    });
+
+    return innerGrid;
+  }
+
+  // ── Items group ──────────────────────────────────────────────────────────────
+  const knownItems = Object.keys(campaign.items ?? {});
+  const hasItems = !!(choice.requires_item || choice.requires_items?.length ||
+                      choice.gives_items?.length || choice.removes_items?.length);
+  const itemsInner = makeGroup('Items', hasItems);
+
+  // Requires items — merge requires_item (single) and requires_items (array)
   const risCtr = document.createElement('div');
   risCtr.className = 'ed-pill-container';
   const risSeed = [
@@ -1732,8 +1798,8 @@ function buildChoiceCard(sceneId, index) {
     delete choice.requires_item;
     choice.requires_items = items.length ? items : undefined;
     scheduleValidation();
-  });
-  addField('Requires items', risCtr);
+  }, knownItems);
+  addField('Requires items', risCtr, itemsInner);
 
   // Gives items
   const givesItemsCtr = document.createElement('div');
@@ -1741,8 +1807,8 @@ function buildChoiceCard(sceneId, index) {
   makePillInput(givesItemsCtr, choice.gives_items ?? [], (items) => {
     choice.gives_items = items.length ? items : undefined;
     scheduleValidation();
-  });
-  addField('Gives items', givesItemsCtr);
+  }, knownItems);
+  addField('Gives items', givesItemsCtr, itemsInner);
 
   // Removes items
   const removesItemsCtr = document.createElement('div');
@@ -1750,33 +1816,170 @@ function buildChoiceCard(sceneId, index) {
   makePillInput(removesItemsCtr, choice.removes_items ?? [], (items) => {
     choice.removes_items = items.length ? items : undefined;
     scheduleValidation();
-  });
-  addField('Removes items', removesItemsCtr);
+  }, knownItems);
+  addField('Removes items', removesItemsCtr, itemsInner);
 
-  // Gives notes
-  const givesNotesCtr = document.createElement('div');
-  givesNotesCtr.className = 'ed-notes-list';
-  makeNotesList(givesNotesCtr, choice.gives_notes ?? [], (notes) => {
-    choice.gives_notes = notes.length ? notes : undefined;
-  });
-  addField('Gives notes', givesNotesCtr);
+  // ── Attributes group ─────────────────────────────────────────────────────────
+  const attrDefs = campaign.attributes ?? campaign.metadata?.attributes ?? {};
+  const attrNames = Object.keys(attrDefs);
+  const ATTR_OPS = ['>', '>=', '<', '<=', '='];
 
-  // Affect attributes
-  const aaCtr = document.createElement('div');
-  aaCtr.className = 'ed-affect-attrs-editor';
-  makeAffectAttributesEditor(aaCtr, choice.affect_attributes, (val) => {
-    choice.affect_attributes = val;
-  });
-  addField('Affect attributes', aaCtr);
+  if (attrNames.length > 0) {
+    const hasAttrs = !!(choice.requires_attributes?.length ||
+                        (choice.affect_attributes &&
+                         Object.values(choice.affect_attributes).some(v => Number(v) !== 0)));
+    const attrsInner = makeGroup('Attributes', hasAttrs);
 
-  // SFX on choice
-  const sfxCtr = document.createElement('div');
-  sfxCtr.className = 'ed-pill-container';
-  makeSfxPillInput(sfxCtr, normaliseSfxToArray(choice.gives_sfx), (keys) => {
-    choice.gives_sfx = keys.length === 0 ? undefined : keys.length === 1 ? keys[0] : keys;
-    scheduleValidation();
-  });
-  addField('SFX', sfxCtr);
+    // Requires attributes
+    const racCtr = document.createElement('div');
+    racCtr.className = 'ed-req-attrs';
+
+    const racDlId = 'req-attr-dl-' + Math.random().toString(36).slice(2, 8);
+    const racDl = document.createElement('datalist');
+    racDl.id = racDlId;
+    for (const name of attrNames) {
+      const o = document.createElement('option');
+      o.value = name;
+      o.textContent = attrDefs[name].label || name;
+      racDl.appendChild(o);
+    }
+    racCtr.appendChild(racDl);
+
+    function buildOpSelect(selectedOp) {
+      const sel = document.createElement('select');
+      sel.className = 'ed-input ed-req-attrs__op';
+      for (const op of ATTR_OPS) {
+        const opt = document.createElement('option');
+        opt.value = op; opt.textContent = op;
+        opt.selected = op === selectedOp;
+        sel.appendChild(opt);
+      }
+      return sel;
+    }
+
+    let pendingAttrName = null;
+
+    function refreshConditions() {
+      racCtr.innerHTML = '';
+      racCtr.appendChild(racDl);
+
+      const conditions = choice.requires_attributes ?? [];
+      for (let ci = 0; ci < conditions.length; ci++) {
+        const cond = conditions[ci];
+        const row = document.createElement('div');
+        row.className = 'ed-req-attrs__row';
+
+        const badge = document.createElement('span');
+        badge.className = 'ed-req-attrs__attr-badge';
+        badge.textContent = attrDefs[cond.attr]?.label || cond.attr;
+
+        const opSel = buildOpSelect(cond.op ?? '>=');
+        opSel.addEventListener('change', () => { cond.op = opSel.value; markDirty(); scheduleValidation(); });
+
+        const valInput = makeInput('number', cond.value != null ? String(Number(cond.value)) : '0', '0');
+        valInput.className += ' ed-req-attrs__val';
+        valInput.addEventListener('input', () => {
+          cond.value = valInput.value !== '' ? Number(valInput.value) : 0;
+          markDirty(); scheduleValidation();
+        });
+
+        const rmBtn = document.createElement('button');
+        rmBtn.className = 'ed-btn--icon';
+        rmBtn.type = 'button';
+        rmBtn.textContent = '✕';
+        rmBtn.title = 'Remove condition';
+        rmBtn.addEventListener('click', () => {
+          conditions.splice(ci, 1);
+          choice.requires_attributes = conditions.length ? conditions : undefined;
+          markDirty(); scheduleValidation();
+          refreshConditions();
+        });
+
+        row.appendChild(badge);
+        row.appendChild(opSel);
+        row.appendChild(valInput);
+        row.appendChild(rmBtn);
+        racCtr.appendChild(row);
+      }
+
+      if (pendingAttrName === null) {
+        const picker = document.createElement('input');
+        picker.className = 'pill-input';
+        picker.placeholder = 'Add attribute condition…';
+        picker.setAttribute('list', racDlId);
+
+        function commitPicker() {
+          const val = picker.value.trim();
+          if (attrNames.includes(val)) {
+            pendingAttrName = val;
+            refreshConditions();
+          } else {
+            picker.value = '';
+          }
+        }
+
+        picker.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); commitPicker(); }
+        });
+        picker.addEventListener('change', () => commitPicker());
+        racCtr.appendChild(picker);
+      } else {
+        const composerRow = document.createElement('div');
+        composerRow.className = 'ed-req-attrs__composer';
+
+        const badge = document.createElement('span');
+        badge.className = 'ed-req-attrs__attr-badge';
+        badge.textContent = attrDefs[pendingAttrName]?.label || pendingAttrName;
+
+        const opSel = buildOpSelect('>=');
+        const valInput = makeInput('number', '1', '0');
+        valInput.className += ' ed-req-attrs__val';
+
+        const addBtn = document.createElement('button');
+        addBtn.className = 'ed-btn--icon ed-req-attrs__add';
+        addBtn.type = 'button';
+        addBtn.textContent = '＋';
+        addBtn.title = 'Add condition';
+        addBtn.addEventListener('click', () => {
+          const newCond = {
+            attr: pendingAttrName,
+            op: opSel.value,
+            value: valInput.value !== '' ? Number(valInput.value) : 0,
+          };
+          choice.requires_attributes = [...(choice.requires_attributes ?? []), newCond];
+          pendingAttrName = null;
+          markDirty(); scheduleValidation();
+          refreshConditions();
+        });
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.className = 'ed-btn--icon';
+        cancelBtn.type = 'button';
+        cancelBtn.textContent = '✕';
+        cancelBtn.title = 'Cancel';
+        cancelBtn.addEventListener('click', () => { pendingAttrName = null; refreshConditions(); });
+
+        composerRow.appendChild(badge);
+        composerRow.appendChild(opSel);
+        composerRow.appendChild(valInput);
+        composerRow.appendChild(addBtn);
+        composerRow.appendChild(cancelBtn);
+        racCtr.appendChild(composerRow);
+        setTimeout(() => valInput.focus(), 0);
+      }
+    }
+
+    refreshConditions();
+    addField('Requires attributes', racCtr, attrsInner);
+
+    // Affect attributes — always expanded within the Attributes group
+    const aaCtr = document.createElement('div');
+    aaCtr.className = 'ed-affect-attrs-editor';
+    addField('Affect attributes', aaCtr, attrsInner);
+    makeAffectAttributesEditor(aaCtr, choice.affect_attributes, (val) => {
+      choice.affect_attributes = val;
+    }, { noToggle: true });
+  }
 
   body.appendChild(grid);
   card.appendChild(header);
@@ -2417,52 +2620,79 @@ function buildAttributeCard(attrName, attrDef) {
   });
   addAttrField('Label', labelInput);
 
-  // Min toggle + value + death message
+  // Hidden toggle — spans both grid columns; checkbox + label kept together
+  const hiddenRow = document.createElement('label');
+  hiddenRow.className = 'ed-attr-boundary-row ed-attr-hidden-row';
+  const hiddenCheck = document.createElement('input');
+  hiddenCheck.type = 'checkbox';
+  hiddenCheck.checked = !!attrDef.is_hidden;
+  hiddenCheck.addEventListener('change', () => {
+    attrDef.is_hidden = hiddenCheck.checked || undefined;
+    markDirty();
+  });
+  hiddenRow.appendChild(hiddenCheck);
+  hiddenRow.appendChild(document.createTextNode(' Hidden — don\'t show in HUD'));
+  grid.appendChild(hiddenRow);
+
+  // Helper: build a scene-ID <select> for min_scene / max_scene
+  function makeSceneSelect(currentVal) {
+    const sel = document.createElement('select');
+    sel.className = 'ed-input ed-input--scene-select';
+    const blank = document.createElement('option');
+    blank.value = '';
+    blank.textContent = '— none —';
+    sel.appendChild(blank);
+    for (const sid of Object.keys(campaign.scenes ?? {})) {
+      const opt = document.createElement('option');
+      opt.value = sid;
+      opt.textContent = sid;
+      opt.selected = sid === currentVal;
+      sel.appendChild(opt);
+    }
+    return sel;
+  }
+
+  // Min — full-width boundary row: [checkbox Min] [value] [scene] [message]
   const hasMin = attrDef.min != null;
-  const minToggleRow = document.createElement('div');
-  minToggleRow.className = 'ed-toggle-row';
-  const minToggleLabel = document.createElement('label');
-  minToggleLabel.className = 'ed-toggle';
+
   const minCheck = document.createElement('input');
   minCheck.type = 'checkbox';
   minCheck.checked = hasMin;
-  minToggleLabel.appendChild(minCheck);
-  minToggleLabel.appendChild(document.createTextNode('Min'));
-  const minInput = makeInput('number', hasMin ? String(Number(attrDef.min)) : '', '0');
+
+  const minInput = makeInput('number', hasMin ? String(Number(attrDef.min)) : '0', '0');
   minInput.className += ' ed-input--narrow';
   if (!hasMin) minInput.classList.add('hidden');
-  minToggleRow.appendChild(minToggleLabel);
-  minToggleRow.appendChild(minInput);
-  addAttrField('Min', minToggleRow);
 
-  // Death message (hidden until min is enabled)
-  const minMsgWrap = document.createElement('div');
-  if (!hasMin) minMsgWrap.classList.add('hidden');
-  const minMsgInput = makeInput('text', attrDef.min_message ?? '', 'Message shown at min');
+  const minSceneSelect = makeSceneSelect(attrDef.min_scene ?? '');
+  minSceneSelect.title = 'Scene to redirect to when min is reached (leave blank to trigger death)';
+  if (!hasMin) minSceneSelect.classList.add('hidden');
+  minSceneSelect.addEventListener('change', () => {
+    attrDef.min_scene = minSceneSelect.value || undefined;
+    markDirty();
+    scheduleValidation();
+  });
+
+  const minMsgInput = makeInput('text', attrDef.min_message ?? '', 'Message at min…');
+  if (!hasMin) minMsgInput.classList.add('hidden');
   minMsgInput.addEventListener('input', () => {
     attrDef.min_message = minMsgInput.value || undefined;
     markDirty();
   });
-  minMsgWrap.appendChild(minMsgInput);
-  addAttrField('Min message', minMsgWrap);
 
-  // Min scene (hidden until min is enabled)
-  const minSceneWrap = document.createElement('div');
-  if (!hasMin) minSceneWrap.classList.add('hidden');
-  const minSceneInput = makeInput('text', attrDef.min_scene ?? '', 'Scene ID to go to at min');
-  minSceneInput.addEventListener('input', () => {
-    attrDef.min_scene = minSceneInput.value || undefined;
-    markDirty();
-    scheduleValidation();
-  });
-  minSceneWrap.appendChild(minSceneInput);
-  addAttrField('Min scene', minSceneWrap);
+  const minBoundaryRow = document.createElement('label');
+  minBoundaryRow.className = 'ed-attr-boundary-row';
+  minBoundaryRow.appendChild(minCheck);
+  minBoundaryRow.appendChild(document.createTextNode(' Min'));
+  minBoundaryRow.appendChild(minInput);
+  minBoundaryRow.appendChild(minSceneSelect);
+  minBoundaryRow.appendChild(minMsgInput);
+  grid.appendChild(minBoundaryRow);
 
   minCheck.addEventListener('change', () => {
     const en = minCheck.checked;
     minInput.classList.toggle('hidden', !en);
-    minMsgWrap.classList.toggle('hidden', !en);
-    minSceneWrap.classList.toggle('hidden', !en);
+    minSceneSelect.classList.toggle('hidden', !en);
+    minMsgInput.classList.toggle('hidden', !en);
     if (en) {
       attrDef.min = Number(minInput.value) || 0;
       if (!minInput.value) minInput.value = '0';
@@ -2470,9 +2700,9 @@ function buildAttributeCard(attrName, attrDef) {
       delete attrDef.min;
       delete attrDef.min_message;
       delete attrDef.min_scene;
-      minInput.value = '';
+      minInput.value = '0';
       minMsgInput.value = '';
-      minSceneInput.value = '';
+      minSceneSelect.value = '';
     }
     markDirty();
     scheduleValidation();
@@ -2482,48 +2712,57 @@ function buildAttributeCard(attrName, attrDef) {
     markDirty();
   });
 
-  // Max toggle + value
+  // Max — full-width boundary row: [checkbox Max] [value] [scene] [message]
   const hasMax = attrDef.max != null;
-  const maxToggleRow = document.createElement('div');
-  maxToggleRow.className = 'ed-toggle-row';
-  const maxToggleLabel = document.createElement('label');
-  maxToggleLabel.className = 'ed-toggle';
+
   const maxCheck = document.createElement('input');
   maxCheck.type = 'checkbox';
   maxCheck.checked = hasMax;
-  maxToggleLabel.appendChild(maxCheck);
-  maxToggleLabel.appendChild(document.createTextNode('Max'));
-  const maxInput = makeInput('number', hasMax ? String(Number(attrDef.max)) : '', '100');
+
+  const maxInput = makeInput('number', hasMax ? String(Number(attrDef.max)) : '100', '100');
   maxInput.className += ' ed-input--narrow';
   if (!hasMax) maxInput.classList.add('hidden');
-  maxToggleRow.appendChild(maxToggleLabel);
-  maxToggleRow.appendChild(maxInput);
-  addAttrField('Max', maxToggleRow);
 
-  // Max scene (hidden until max is enabled)
-  const maxSceneWrap = document.createElement('div');
-  if (!hasMax) maxSceneWrap.classList.add('hidden');
-  const maxSceneInput = makeInput('text', attrDef.max_scene ?? '', 'Scene ID to go to at max');
-  maxSceneInput.addEventListener('input', () => {
-    attrDef.max_scene = maxSceneInput.value || undefined;
+  const maxSceneSelect = makeSceneSelect(attrDef.max_scene ?? '');
+  maxSceneSelect.title = 'Scene to redirect to when max is reached (optional)';
+  if (!hasMax) maxSceneSelect.classList.add('hidden');
+  maxSceneSelect.addEventListener('change', () => {
+    attrDef.max_scene = maxSceneSelect.value || undefined;
     markDirty();
     scheduleValidation();
   });
-  maxSceneWrap.appendChild(maxSceneInput);
-  addAttrField('Max scene', maxSceneWrap);
+
+  const maxMsgInput = makeInput('text', attrDef.max_message ?? '', 'Message at max…');
+  if (!hasMax) maxMsgInput.classList.add('hidden');
+  maxMsgInput.addEventListener('input', () => {
+    attrDef.max_message = maxMsgInput.value || undefined;
+    markDirty();
+  });
+
+  const maxBoundaryRow = document.createElement('label');
+  maxBoundaryRow.className = 'ed-attr-boundary-row';
+  maxBoundaryRow.appendChild(maxCheck);
+  maxBoundaryRow.appendChild(document.createTextNode(' Max'));
+  maxBoundaryRow.appendChild(maxInput);
+  maxBoundaryRow.appendChild(maxSceneSelect);
+  maxBoundaryRow.appendChild(maxMsgInput);
+  grid.appendChild(maxBoundaryRow);
 
   maxCheck.addEventListener('change', () => {
     const en = maxCheck.checked;
     maxInput.classList.toggle('hidden', !en);
-    maxSceneWrap.classList.toggle('hidden', !en);
+    maxSceneSelect.classList.toggle('hidden', !en);
+    maxMsgInput.classList.toggle('hidden', !en);
     if (en) {
       attrDef.max = Number(maxInput.value) || 100;
       if (!maxInput.value) maxInput.value = String(attrDef.max);
     } else {
       delete attrDef.max;
       delete attrDef.max_scene;
-      maxInput.value = '';
-      maxSceneInput.value = '';
+      delete attrDef.max_message;
+      maxInput.value = '100';
+      maxMsgInput.value = '';
+      maxSceneSelect.value = '';
     }
     markDirty();
     scheduleValidation();
@@ -2543,8 +2782,10 @@ function buildAttributeCard(attrName, attrDef) {
  * @param {HTMLElement} container
  * @param {object|undefined} currentAttrs  — current affect_attributes dict (may be sparse)
  * @param {function(object|undefined): void} onChange
+ * @param {{ labelEl?: HTMLElement }} [opts]  — if labelEl provided, toggle button is appended
+ *   there instead of creating a standalone collapsible wrapper (inline toggle mode)
  */
-function makeAffectAttributesEditor(container, currentAttrs, onChange) {
+function makeAffectAttributesEditor(container, currentAttrs, onChange, opts = {}) {
   container.innerHTML = '';
   const attrDefs = campaign.attributes ?? campaign.metadata?.attributes ?? {};
   const attrNames = Object.keys(attrDefs);
@@ -2557,60 +2798,142 @@ function makeAffectAttributesEditor(container, currentAttrs, onChange) {
     return;
   }
 
-  // Determine if any attribute has a non-zero value (start expanded if so)
+  const noToggle = !!opts.noToggle;
   const hasValues = currentAttrs && Object.values(currentAttrs).some((v) => Number(v) !== 0);
 
-  const wrapper = document.createElement('div');
-  wrapper.className = 'ed-collapsible';
+  // In noToggle mode, write directly into container; otherwise use a collapsible body
+  let toggle = null;
+  let root;
+  if (noToggle) {
+    root = container;
+  } else {
+    toggle = document.createElement('button');
+    toggle.className = 'ed-collapsible__toggle';
+    toggle.type = 'button';
+    toggle.textContent = hasValues ? '−' : '+';
 
-  const toggle = document.createElement('button');
-  toggle.className = 'ed-collapsible__toggle';
-  toggle.type = 'button';
-  toggle.textContent = hasValues ? '− Affect Attributes' : '+ Affect Attributes';
-  wrapper.appendChild(toggle);
+    root = document.createElement('div');
+    root.className = 'ed-collapsible__body';
+    root.style.display = hasValues ? '' : 'none';
 
-  const body = document.createElement('div');
-  body.className = 'ed-collapsible__body';
-  body.style.display = hasValues ? '' : 'none';
-
-  toggle.addEventListener('click', () => {
-    const isOpen = body.style.display !== 'none';
-    body.style.display = isOpen ? 'none' : '';
-    toggle.textContent = isOpen ? '+ Affect Attributes' : '− Affect Attributes';
-  });
-
-  const current = { ...(currentAttrs ?? {}) };
-  const grid = document.createElement('div');
-  grid.className = 'ed-field-grid';
-
-  for (const attrName of attrNames) {
-    const def = attrDefs[attrName];
-    const displayLabel = def.label || attrName;
-
-    const lbl = document.createElement('label');
-    lbl.className = 'ed-label';
-    lbl.textContent = displayLabel;
-
-    const existingVal = current[attrName];
-    const input = makeInput('number', existingVal !== undefined ? String(Number(existingVal)) : '', '0');
-    input.addEventListener('input', () => {
-      const n = Number(input.value);
-      if (input.value !== '' && n !== 0) {
-        current[attrName] = n;
-      } else {
-        delete current[attrName];
-      }
-      const result = Object.keys(current).length > 0 ? { ...current } : undefined;
-      onChange(result);
+    toggle.addEventListener('click', () => {
+      const isOpen = root.style.display !== 'none';
+      root.style.display = isOpen ? 'none' : '';
+      toggle.textContent = isOpen ? '+' : '−';
     });
-
-    grid.appendChild(lbl);
-    grid.appendChild(input);
   }
 
-  body.appendChild(grid);
-  wrapper.appendChild(body);
-  container.appendChild(wrapper);
+  const current = { ...(currentAttrs ?? {}) };
+
+  // Inline datalist for the attribute picker
+  const aaDlId = 'affect-attr-dl-' + Math.random().toString(36).slice(2, 8);
+  const aaDl = document.createElement('datalist');
+  aaDl.id = aaDlId;
+  for (const name of attrNames) {
+    const o = document.createElement('option');
+    o.value = name;
+    o.textContent = attrDefs[name].label || name;
+    aaDl.appendChild(o);
+  }
+
+  function notifyChange() {
+    const filtered = {};
+    for (const [k, v] of Object.entries(current)) {
+      if (Number(v) !== 0) filtered[k] = v;
+    }
+    onChange(Object.keys(filtered).length > 0 ? filtered : undefined);
+  }
+
+  function refresh() {
+    root.innerHTML = '';
+    root.appendChild(aaDl);
+
+    // Render rows for each attribute that has been explicitly added (non-undefined)
+    for (const attrName of attrNames) {
+      if (current[attrName] === undefined) continue;
+      const def = attrDefs[attrName];
+      const displayLabel = def.label || attrName;
+
+      const row = document.createElement('div');
+      row.className = 'ed-req-attrs__row';
+
+      const badge = document.createElement('span');
+      badge.className = 'ed-req-attrs__attr-badge';
+      badge.textContent = displayLabel;
+
+      const input = makeInput('number', String(Number(current[attrName])), '0');
+      input.className += ' ed-req-attrs__val';
+      input.dataset.attr = attrName;
+      input.addEventListener('input', () => {
+        current[attrName] = input.value !== '' ? Number(input.value) : 0;
+        notifyChange();
+      });
+
+      const rmBtn = document.createElement('button');
+      rmBtn.className = 'ed-btn--icon';
+      rmBtn.type = 'button';
+      rmBtn.textContent = '✕';
+      rmBtn.title = 'Remove';
+      rmBtn.addEventListener('click', () => {
+        delete current[attrName];
+        notifyChange();
+        refresh();
+        if (!noToggle && Object.keys(current).length === 0) {
+          root.style.display = 'none';
+          toggle.textContent = '+';
+        }
+      });
+
+      row.appendChild(badge);
+      row.appendChild(input);
+      row.appendChild(rmBtn);
+      root.appendChild(row);
+    }
+
+    // Attribute picker — text input with datalist
+    const picker = document.createElement('input');
+    picker.className = 'pill-input';
+    picker.placeholder = 'Add attribute…';
+    picker.setAttribute('list', aaDlId);
+
+    function commitPicker() {
+      const val = picker.value.trim();
+      if (!attrNames.includes(val)) { picker.value = ''; return; }
+      if (current[val] === undefined) current[val] = 0;
+      notifyChange();
+      picker.value = '';
+      refresh();
+      if (!noToggle) {
+        root.style.display = '';
+        toggle.textContent = '−';
+      }
+      root.querySelector(`[data-attr="${val}"]`)?.focus();
+    }
+
+    picker.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); commitPicker(); }
+    });
+    picker.addEventListener('change', () => {
+      if (attrNames.includes(picker.value.trim())) commitPicker();
+    });
+
+    root.appendChild(picker);
+  }
+
+  refresh();
+
+  if (noToggle) {
+    // root IS container — already populated by refresh()
+  } else if (opts.labelEl) {
+    opts.labelEl.appendChild(toggle);
+    container.appendChild(root);
+  } else {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'ed-collapsible';
+    wrapper.appendChild(toggle);
+    wrapper.appendChild(root);
+    container.appendChild(wrapper);
+  }
 }
 
 // ─── Flow (Visual) pane wiring ────────────────────────────────────────────────
@@ -2628,11 +2951,7 @@ function wireFlowPane() {
     const action  = btn.dataset.action;
     const sceneId = edFlowContextMenu.dataset.sceneId;
     if (!sceneId || !campaign) return;
-    if (action === 'edit') {
-      mode = 'form';
-      activateFormMode();
-      selectScene(sceneId);
-    } else if (action === 'rename') {
+    if (action === 'rename') {
       activeScene = sceneId;
       openRenameModal(sceneId);
     } else if (action === 'set-start') {
@@ -2640,6 +2959,12 @@ function wireFlowPane() {
       markDirty();
       scheduleValidation();
       renderFlowEditor();
+    } else if (action === 'set-terminal') {
+      campaign.scenes[sceneId].end = true;
+      markDirty();
+      scheduleValidation();
+      renderFlowEditor();
+      showToast(`Scene '${sceneId}' marked as terminal.`);
     } else if (action === 'delete') {
       if (Object.keys(campaign.scenes).length <= 1) {
         showToast('Cannot delete the only scene.');
@@ -2663,15 +2988,7 @@ function wireFlowPane() {
     const choiceIdx = Number(edFlowChoiceContextMenu.dataset.choiceIdx);
     hideChoiceContextMenu();
     if (!sceneId || !campaign?.scenes?.[sceneId]) return;
-    if (btn.dataset.action === 'edit') {
-      mode = 'form';
-      activateFormMode();
-      selectScene(sceneId);
-      requestAnimationFrame(() => {
-        const cards = edChoicesList.querySelectorAll('.ed-choice-card');
-        if (cards[choiceIdx]) cards[choiceIdx].scrollIntoView({ block: 'nearest' });
-      });
-    } else if (btn.dataset.action === 'retarget') {
+    if (btn.dataset.action === 'retarget') {
       const choices = campaign.scenes[sceneId].choices ?? [];
       if (choiceIdx < 0 || choiceIdx >= choices.length) return;
       const current = choices[choiceIdx].next ?? '';
@@ -2700,6 +3017,8 @@ function wireFlowPane() {
         !edFlowContextMenu.contains(e.target)) hideFlowContextMenu();
     if (!edFlowChoiceContextMenu.classList.contains('hidden') &&
         !edFlowChoiceContextMenu.contains(e.target)) hideChoiceContextMenu();
+    if (!edFileContextMenu.classList.contains('hidden') &&
+        !edFileContextMenu.contains(e.target)) hideFileContextMenu();
   });
 
   // Escape — cancel edge draw and close overlays
@@ -2707,7 +3026,56 @@ function wireFlowPane() {
     if (e.key === 'Escape') {
       hideFlowContextMenu();
       hideChoiceContextMenu();
+      hideFileContextMenu();
       if (mode === 'visual') cancelEdgeSource();
+    }
+  });
+
+  // File context menu actions
+  edFileContextMenu.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    const filename = edFileContextMenu.dataset.filename;
+    hideFileContextMenu();
+    if (!filename) return;
+
+    if (btn.dataset.action === 'rename') {
+      const newName = prompt('Rename file to (must end in .yaml):', filename);
+      if (!newName || newName === filename) return;
+      if (!newName.endsWith('.yaml')) { showToast('File name must end in .yaml'); return; }
+      if (newName === 'metadata.yaml') { showToast('Cannot rename to metadata.yaml'); return; }
+      if (fileMap.has(newName)) { showToast(`File '${newName}' already exists`); return; }
+      // Rebuild fileMap preserving insertion order
+      const entries = [...fileMap.entries()].map(([k, v]) => [k === filename ? newName : k, v]);
+      fileMap.clear();
+      for (const [k, v] of entries) fileMap.set(k, v);
+      buildSceneFileMap();
+      markDirty();
+      scheduleValidation();
+      selectFile(newName);
+    } else if (btn.dataset.action === 'duplicate') {
+      let candidate = `copy_of_${filename}`;
+      // Increment suffix if already taken
+      let suffix = 2;
+      while (fileMap.has(candidate)) {
+        candidate = `copy_of_${filename.replace(/\.yaml$/, '')}_${suffix}.yaml`;
+        suffix++;
+      }
+      fileMap.set(candidate, fileMap.get(filename));
+      markDirty();
+      scheduleValidation();
+      renderFileTree();
+      selectFile(candidate);
+    } else if (btn.dataset.action === 'save') {
+      const blob = new Blob([fileMap.get(filename) ?? ''], { type: 'text/yaml' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } else if (btn.dataset.action === 'delete') {
+      deleteFile(filename);
     }
   });
 }
@@ -2737,6 +3105,25 @@ function showChoiceContextMenu(sceneId, choiceIdx, x, y) {
 
 function hideChoiceContextMenu() {
   edFlowChoiceContextMenu.classList.add('hidden');
+}
+
+function showFileContextMenu(filename, x, y) {
+  edFileContextMenu.dataset.filename = filename;
+  edFileContextMenu.style.left = x + 'px';
+  edFileContextMenu.style.top  = y + 'px';
+  edFileContextMenu.classList.remove('hidden');
+  // Hide the Delete option for metadata.yaml
+  const deleteBtn = edFileContextMenu.querySelector('[data-action="delete"]');
+  if (deleteBtn) deleteBtn.style.display = filename === 'metadata.yaml' ? 'none' : '';
+  // Hide Rename and Duplicate for metadata.yaml
+  const renameBtn = edFileContextMenu.querySelector('[data-action="rename"]');
+  if (renameBtn) renameBtn.style.display = filename === 'metadata.yaml' ? 'none' : '';
+  const dupBtn = edFileContextMenu.querySelector('[data-action="duplicate"]');
+  if (dupBtn) dupBtn.style.display = filename === 'metadata.yaml' ? 'none' : '';
+}
+
+function hideFileContextMenu() {
+  edFileContextMenu.classList.add('hidden');
 }
 
 function renderFlowEditor(refit = false) {
@@ -2784,16 +3171,41 @@ function renderFlowEditor(refit = false) {
       hideFlowContextMenu();
       hideChoiceContextMenu();
     },
-    onChoiceDblClick(sceneId) {
+    onChoiceDblClick(sceneId, choiceIdx) {
       hideChoiceContextMenu();
       hideFlowContextMenu();
       mode = 'form';
       activateFormMode();
       selectScene(sceneId);
+      requestAnimationFrame(() => {
+        const cards = edChoicesList.querySelectorAll('.ed-choice-card');
+        if (cards[choiceIdx]) cards[choiceIdx].scrollIntoView({ block: 'nearest' });
+      });
     },
     onChoiceRightClick(sceneId, choiceIdx, x, y) {
       hideFlowContextMenu();
       showChoiceContextMenu(sceneId, choiceIdx, x, y);
+    },
+    onEdgeDroppedOnCanvas(fromId, x, y) {
+      // Ctrl+drag from a node released on empty canvas — create new scene + connecting choice
+      const id = promptNewSceneId();
+      if (!id) return;
+      campaign.scenes[id] = { text: '', choices: [] };
+      campaign._editorMeta = campaign._editorMeta ?? {};
+      campaign._editorMeta.positions = campaign._editorMeta.positions ?? {};
+      campaign._editorMeta.positions[id] = { x, y };
+      const label = prompt(`Choice label from '${fromId}' to '${id}':`, 'Go forward');
+      if (label) {
+        const fromScene = campaign.scenes[fromId];
+        if (fromScene) {
+          fromScene.choices = fromScene.choices ?? [];
+          fromScene.choices.push({ label, next: id });
+        }
+      }
+      markDirty();
+      scheduleValidation();
+      renderFlowEditor();
+      showToast(`Scene '${id}' created.`);
     },
     onCreateScene(x, y) {
       const id = promptNewSceneId();
@@ -3129,11 +3541,31 @@ function refreshItemDatalist() {
  * @param {function(string[]): void} onChange
  * @param {string|null} listId  optional datalist id for autocomplete
  */
-function makePillInput(container, initialItems, onChange, listId = null) {
+function makePillInput(container, initialItems, onChange, datalistIdOrOptions = null) {
+  // Support: string = existing datalist ID; array = generate an inline datalist
+  let listId = null;
+  if (typeof datalistIdOrOptions === 'string') {
+    listId = datalistIdOrOptions;
+  } else if (Array.isArray(datalistIdOrOptions) && datalistIdOrOptions.length > 0) {
+    listId = 'pill-dl-' + Math.random().toString(36).slice(2, 8);
+    const dl = document.createElement('datalist');
+    dl.id = listId;
+    for (const opt of datalistIdOrOptions) {
+      const o = document.createElement('option');
+      o.value = opt;
+      dl.appendChild(o);
+    }
+    container.appendChild(dl);
+  }
+
   let items = [...initialItems];
 
   function render() {
+    // Remove old pills and input but keep the datalist element if present
+    const dl = container.querySelector('datalist');
     container.innerHTML = '';
+    if (dl) container.appendChild(dl);
+
     for (const item of items) {
       const pill = document.createElement('span');
       pill.className = 'pill';

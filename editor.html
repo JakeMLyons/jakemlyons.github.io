@@ -387,19 +387,26 @@
     </div>
   </div>
 
-  <!-- Choice context menu (shown on right-click of an edge) -->
+  <!-- Choice context menu (shown on right-click of an edge; double-click to edit in form) -->
   <div id="ed-flow-choice-context-menu" class="ed-flow-context-menu hidden">
-    <button class="ed-flow-context-menu__item" data-action="edit">Edit in Form</button>
     <button class="ed-flow-context-menu__item" data-action="retarget">Change target…</button>
     <button class="ed-flow-context-menu__item ed-flow-context-menu__item--danger" data-action="delete">Delete choice</button>
   </div>
 
   <!-- Flow canvas context menu (shown on right-click of a node) -->
   <div id="ed-flow-context-menu" class="ed-flow-context-menu hidden">
-    <button class="ed-flow-context-menu__item" data-action="edit">Edit scene</button>
     <button class="ed-flow-context-menu__item" data-action="rename">Rename ID…</button>
     <button class="ed-flow-context-menu__item" data-action="set-start">Set as start scene</button>
+    <button class="ed-flow-context-menu__item" data-action="set-terminal">Set as terminal scene</button>
     <button class="ed-flow-context-menu__item ed-flow-context-menu__item--danger" data-action="delete">Delete scene</button>
+  </div>
+
+  <!-- File tree context menu (shown on right-click of a file in code mode) -->
+  <div id="ed-file-context-menu" class="ed-flow-context-menu hidden">
+    <button class="ed-flow-context-menu__item" data-action="rename">Rename…</button>
+    <button class="ed-flow-context-menu__item" data-action="duplicate">Duplicate</button>
+    <button class="ed-flow-context-menu__item" data-action="save">Download</button>
+    <button class="ed-flow-context-menu__item ed-flow-context-menu__item--danger" data-action="delete">Delete</button>
   </div>
 
   <!-- Mode-switch warning dialog (native <dialog>) -->
