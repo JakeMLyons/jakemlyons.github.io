@@ -58,7 +58,7 @@ export class GameEngine {
    */
   step(state, playerInput) {
     const scene = this._scenes[state.sceneId];
-    const available = getAvailableChoices(scene.choices ?? [], state.inventory);
+    const available = getAvailableChoices(scene.choices ?? [], state.inventory, state.attributes);
 
     // Validate input: must be a whole-number string or integer
     const parsed = Number(playerInput);
@@ -207,7 +207,7 @@ export class GameEngine {
     }
 
     // 8. Filter available choices
-    const available = getAvailableChoices(scene.choices ?? [], state.inventory);
+    const available = getAvailableChoices(scene.choices ?? [], state.inventory, state.attributes);
 
     if (available.length === 0) {
       return new GameOutput({

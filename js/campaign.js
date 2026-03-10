@@ -322,6 +322,25 @@ export function validateCampaign(campaign) {
 
       checkAffectAttributes(choice, prefix);
 
+      // Validate requires_attributes conditions
+      const VALID_OPS = new Set(['>', '>=', '<', '<=', '=']);
+      for (const [ci, cond] of (choice.requires_attributes ?? []).entries()) {
+        const cpfx = `${prefix} requires_attributes[${ci}]`;
+        if (!cond.attr) {
+          err(`${cpfx}: missing 'attr'.`);
+        } else if (attrDefs && !(cond.attr in attrDefs)) {
+          err(`${cpfx}: 'attr' references unknown attribute '${cond.attr}'.`);
+        }
+        if (!cond.op) {
+          err(`${cpfx}: missing 'op'.`);
+        } else if (!VALID_OPS.has(cond.op)) {
+          err(`${cpfx}: 'op' must be one of >, >=, <, <=, = (got '${cond.op}').`);
+        }
+        if (cond.value == null || isNaN(Number(cond.value))) {
+          err(`${cpfx}: 'value' must be a number.`);
+        }
+      }
+
       // Collect item names for advisory checks
       if (choice.requires_item) allItemNamesUsed.add(choice.requires_item);
       for (const item of choice.requires_items ?? []) allItemNamesUsed.add(item);

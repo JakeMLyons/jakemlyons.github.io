@@ -12,6 +12,7 @@
  *   onEdgeCreated(fromId, toId)          — user completed a drag connection (new choice)
  *   onChoiceRetarget(sceneId, idx, newTargetId) — user Ctrl+dragged an edge to a new target
  *   onEdgeCancelled()                   — drag released on empty canvas (no edge made)
+ *   onEdgeDroppedOnCanvas(fromId, x, y) — Ctrl+drag from node released on empty canvas
  *   onChoiceClick(sceneId, idx, x, y)    — single-click edge → choice popover
  *   onChoiceDblClick(sceneId, idx)       — double-click edge → open choice in Form
  *   onChoiceRightClick(sceneId, idx, x, y) — right-click edge → choice context menu
@@ -31,6 +32,8 @@ let callbacks      = {};
 let singleTapTimer = null;
 let edgeTapTimer   = null;
 let retargetInfo   = null;      // {sceneId, choiceIdx} when Ctrl+dragging an existing edge
+let ctrlDragFrom   = null;      // nodeId when Ctrl+drag on a node starts (for canvas-drop)
+let lastCyPos      = { x: 0, y: 0 }; // last known cursor position in Cytoscape model coords
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
@@ -59,7 +62,10 @@ export function initFlowEditor(container, campaign, cbs, savedPositions = {}, re
   // Ctrl+drag on a node — register BEFORE edgehandles so this tapstart fires first,
   // enabling draw mode in time for edgehandles' own tapstart handler to see it.
   cy.on('tapstart', 'node', e => {
-    if (e.originalEvent?.ctrlKey) eh?.enableDrawMode();
+    if (e.originalEvent?.ctrlKey) {
+      ctrlDragFrom = e.target.id(); // remember which node started this ctrl+drag
+      eh?.enableDrawMode();
+    }
   });
 
   // Ctrl+drag on an edge — retarget that choice to a new scene.
@@ -91,6 +97,7 @@ export function initFlowEditor(container, campaign, cbs, savedPositions = {}, re
     cy.on('ehcomplete', (_event, sourceNode, targetNode, addedEles) => {
       addedEles.remove(); // remove temp edge — graph is rebuilt from campaign data
       eh.disableDrawMode();
+      ctrlDragFrom = null; // completed normally — no canvas-drop action needed
       if (retargetInfo) {
         const { sceneId, choiceIdx } = retargetInfo;
         retargetInfo = null;
@@ -101,9 +108,16 @@ export function initFlowEditor(container, campaign, cbs, savedPositions = {}, re
     });
 
     cy.on('ehcancel', () => {
+      const fromId = ctrlDragFrom;
       retargetInfo = null;
+      ctrlDragFrom = null;
       eh.disableDrawMode();
-      callbacks.onEdgeCancelled?.();
+      if (fromId) {
+        // Ctrl+drag from a node released on empty canvas → let editor create a new scene
+        callbacks.onEdgeDroppedOnCanvas?.(fromId, lastCyPos.x, lastCyPos.y);
+      } else {
+        callbacks.onEdgeCancelled?.();
+      }
     });
   }
 
@@ -117,6 +131,8 @@ export function destroyFlowEditor() {
   singleTapTimer = null;
   edgeTapTimer   = null;
   retargetInfo   = null;
+  ctrlDragFrom   = null;
+  lastCyPos      = { x: 0, y: 0 };
   if (cy) { cy.destroy(); cy = null; }
   eh = null;
 }
@@ -379,6 +395,9 @@ function wireEvents() {
   });
 
   cy.on('dragfree', 'node', () => callbacks.onPositionsChanged?.(getNodePositions()));
+
+  // Track cursor position in Cytoscape model coords for canvas-drop detection
+  cy.on('mousemove', e => { lastCyPos = e.position; });
 }
 
 function highlightNode(node) {
