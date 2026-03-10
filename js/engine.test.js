@@ -15,9 +15,9 @@ function makeCampaign(overrides = {}) {
     metadata: {
       title: 'Test',
       start: 'start',
-      attributes: { health: { value: 100, min: 0 } },
       inventory: [],
     },
+    attributes: { health: { value: 100, min: 0 } },
     scenes: {
       start: {
         text: 'You are at the start.',
@@ -196,6 +196,112 @@ describe('Death handling', () => {
     assert.equal(s2.isTerminal, true);
     assert.equal(s2.terminalReason, 'death');
     assert.equal(s2.sceneText, 'You are in the forest.');
+  });
+});
+
+// ─── Scene-linked boundaries ──────────────────────────────────────────────────
+
+describe('Scene-linked boundaries', () => {
+  it('min_scene redirects to linked scene instead of death', () => {
+    const campaign = makeCampaign({
+      attributes: { health: { value: 100, min: 0, min_scene: 'death_scene' } },
+      scenes: {
+        start: {
+          text: 'Start.',
+          choices: [{ label: 'Die', next: 'forest', affect_attributes: { health: -200 } }],
+        },
+        forest: { text: 'Forest.', end: true },
+        death_scene: { text: 'You collapsed.', end: true },
+      },
+    });
+    const engine = new GameEngine(campaign);
+    const s1 = engine.start();
+    const s2 = engine.step(s1.state, '1');
+    // Should redirect to death_scene, not show 'death' terminalReason
+    assert.equal(s2.sceneText, 'You collapsed.');
+    assert.equal(s2.isTerminal, true);
+    assert.equal(s2.terminalReason, 'end'); // end: true on the scene
+    assert.equal(s2.state.sceneId, 'death_scene');
+  });
+
+  it('min without min_scene still triggers old-style death', () => {
+    const campaign = makeCampaign({
+      attributes: { health: { value: 100, min: 0, min_message: 'You died.' } },
+    });
+    campaign.scenes.start.choices = [
+      { label: 'Die', next: 'forest', affect_attributes: { health: -200 } },
+    ];
+    const engine = new GameEngine(campaign);
+    const s1 = engine.start();
+    const s2 = engine.step(s1.state, '1');
+    assert.equal(s2.isTerminal, true);
+    assert.equal(s2.terminalReason, 'death');
+    assert.equal(s2.deathMessage, 'You died.');
+  });
+
+  it('max_scene redirects when max is reached', () => {
+    const campaign = makeCampaign({
+      attributes: { power: { value: 5, max: 10, max_scene: 'ascend' } },
+      scenes: {
+        start: {
+          text: 'Start.',
+          choices: [{ label: 'Power up', next: 'forest', affect_attributes: { power: 10 } }],
+        },
+        forest: { text: 'Forest.', end: true },
+        ascend: { text: 'You ascended.', end: true },
+      },
+    });
+    const engine = new GameEngine(campaign);
+    const s1 = engine.start();
+    const s2 = engine.step(s1.state, '1');
+    assert.equal(s2.sceneText, 'You ascended.');
+    assert.equal(s2.state.sceneId, 'ascend');
+  });
+
+  it('on_enter min_scene redirect works', () => {
+    const campaign = makeCampaign({
+      attributes: { health: { value: 100, min: 0, min_scene: 'dead_end' } },
+      scenes: {
+        start: {
+          text: 'Start.',
+          choices: [{ label: 'Go', next: 'trap' }],
+        },
+        trap: {
+          text: 'A trap!',
+          on_enter: { affect_attributes: { health: -200 } },
+          choices: [{ label: 'Back', next: 'start' }],
+        },
+        dead_end: { text: 'Your journey ends here.', end: true },
+      },
+    });
+    const engine = new GameEngine(campaign);
+    const s1 = engine.start();
+    const s2 = engine.step(s1.state, '1');
+    assert.equal(s2.sceneText, 'Your journey ends here.');
+    assert.equal(s2.state.sceneId, 'dead_end');
+  });
+
+  it('min_scene target can be a non-terminal scene with choices', () => {
+    const campaign = makeCampaign({
+      attributes: { health: { value: 100, min: 0, min_scene: 'revival' } },
+      scenes: {
+        start: {
+          text: 'Start.',
+          choices: [{ label: 'Die', next: 'forest', affect_attributes: { health: -200 } }],
+        },
+        forest: { text: 'Forest.', end: true },
+        revival: {
+          text: 'You awaken somewhere new.',
+          choices: [{ label: 'Continue', next: 'forest' }],
+        },
+      },
+    });
+    const engine = new GameEngine(campaign);
+    const s1 = engine.start();
+    const s2 = engine.step(s1.state, '1');
+    assert.equal(s2.sceneText, 'You awaken somewhere new.');
+    assert.equal(s2.isTerminal, false);
+    assert.deepEqual(s2.choices, ['Continue']);
   });
 });
 
@@ -449,7 +555,7 @@ describe('Assets — all GameOutput paths carry assets', () => {
 
   it('death from on_enter carries new scene assets', () => {
     const campaign = makeCampaignWithAssets();
-    campaign.metadata.attributes = { health: { value: 100, min: 0 } };
+    campaign.attributes = { health: { value: 100, min: 0 } };
     campaign.scenes.forest.on_enter = { affect_attributes: { health: -200 } };
     campaign.scenes.forest.assets = { image: 'shore_img' };
     const engine = new GameEngine(campaign);
@@ -462,7 +568,7 @@ describe('Assets — all GameOutput paths carry assets', () => {
 
   it('death from choice carries current scene assets', () => {
     const campaign = makeCampaignWithAssets();
-    campaign.metadata.attributes = { health: { value: 100, min: 0 } };
+    campaign.attributes = { health: { value: 100, min: 0 } };
     campaign.scenes.start.choices = [
       { label: 'Die', next: 'forest', affect_attributes: { health: -200 } },
     ];

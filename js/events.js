@@ -2,8 +2,8 @@
  * events.js — Effect application functions.
  *
  * All functions are pure transforms: they take state + data, apply effects,
- * and return { newState, messages } (or { newState, messages, died, deathMessage }
- * for functions that can trigger death). They never mutate the input state
+ * and return { newState, messages } (or { newState, messages, died, deathMessage, triggerScene }
+ * for functions that can trigger boundary effects). They never mutate the input state
  * (call state.copy() first) and never touch the DOM.
  *
  * YAML integer coercion: because the campaign loader uses FAILSAFE_SCHEMA,
@@ -29,7 +29,7 @@ function applyItemAttributeGrant(itemName, state, campaign) {
   if (Object.keys(affects).length === 0) return { newState: state };
 
   const newState = state.copy();
-  const attrDefs = campaign.metadata?.attributes ?? {};
+  const attrDefs = campaign.attributes ?? campaign.metadata?.attributes ?? {};
 
   for (const [attrName, delta] of Object.entries(affects)) {
     if (!(attrName in newState.attributes)) continue; // unknown attribute, skip
@@ -57,7 +57,7 @@ function applyItemAttributeRemoval(itemName, state, campaign) {
   if (Object.keys(affects).length === 0) return { newState: state };
 
   const newState = state.copy();
-  const attrDefs = campaign.metadata?.attributes ?? {};
+  const attrDefs = campaign.attributes ?? campaign.metadata?.attributes ?? {};
 
   for (const [attrName, delta] of Object.entries(affects)) {
     if (!(attrName in newState.attributes)) continue;
@@ -76,39 +76,58 @@ function applyItemAttributeRemoval(itemName, state, campaign) {
 
 /**
  * Apply affect_attributes deltas from a choice or on_enter block.
- * Clamps each attribute to [min, max]; checks for min breach (death).
+ * Clamps each attribute to [min, max]; checks for boundary breaches.
+ *
+ * When an attribute reaches its min and has a min_scene, triggerScene is set
+ * to that scene ID. When min is reached without min_scene, old-style death
+ * fires (died=true). max_scene works the same way for the upper bound.
+ * First attribute (in definition order) whose boundary is reached wins.
  *
  * @param {object} data - choice or on_enter block
  * @param {PlayerState} state
  * @param {object} campaign
- * @returns {{ newState: PlayerState, messages: string[], died: boolean, deathMessage: string|null }}
+ * @returns {{ newState: PlayerState, messages: string[], died: boolean, deathMessage: string|null, triggerScene: string|null }}
  */
 export function applyAttributeEffects(data, state, campaign) {
   const affects = data.affect_attributes ?? {};
   if (Object.keys(affects).length === 0) {
-    return { newState: state, messages: [], died: false, deathMessage: null };
+    return { newState: state, messages: [], died: false, deathMessage: null, triggerScene: null };
   }
 
   const newState = state.copy();
-  const attrDefs = campaign.metadata?.attributes ?? {};
+  const attrDefs = campaign.attributes ?? campaign.metadata?.attributes ?? {};
   const messages = [];
   let died = false;
   let deathMessage = null;
+  let triggerScene = null;
 
   for (const [attrName, delta] of Object.entries(affects)) {
     if (!(attrName in newState.attributes)) continue; // unknown attribute, skip
-    let newVal = newState.attributes[attrName] + Number(delta);
+    const rawVal = newState.attributes[attrName] + Number(delta);
+    let newVal = rawVal;
     const def = attrDefs[attrName] ?? {};
+
+    // Clamp to boundaries
     if (def.max != null) newVal = Math.min(newVal, Number(def.max));
     if (def.min != null) newVal = Math.max(newVal, Number(def.min));
     newState.attributes[attrName] = newVal;
-    if (def.min != null && newVal <= Number(def.min) && !died) {
-      died = true;
-      deathMessage = def.min_message ?? null; // null = UI shows default fallback
+
+    // Boundary checks — first attribute wins
+    if (!died && !triggerScene) {
+      if (def.min != null && newVal <= Number(def.min)) {
+        if (def.min_scene) {
+          triggerScene = def.min_scene;
+        } else {
+          died = true;
+          deathMessage = def.min_message ?? null;
+        }
+      } else if (def.max != null && rawVal >= Number(def.max) && def.max_scene) {
+        triggerScene = def.max_scene;
+      }
     }
   }
 
-  return { newState, messages, died, deathMessage };
+  return { newState, messages, died, deathMessage, triggerScene };
 }
 
 /**
@@ -197,11 +216,11 @@ export function applyNoteGrants(data, state) {
  * @param {object} scene
  * @param {PlayerState} state
  * @param {object} campaign
- * @returns {{ newState: PlayerState, messages: string[], died: boolean, deathMessage: string|null }}
+ * @returns {{ newState: PlayerState, messages: string[], died: boolean, deathMessage: string|null, triggerScene: string|null }}
  */
 export function applySceneEvents(scene, state, campaign) {
   const onEnter = scene.on_enter;
-  if (!onEnter) return { newState: state, messages: [], died: false, deathMessage: null };
+  if (!onEnter) return { newState: state, messages: [], died: false, deathMessage: null, triggerScene: null };
 
   let newState = state.copy();
   const messages = [];
@@ -237,7 +256,7 @@ export function applySceneEvents(scene, state, campaign) {
   newState = attrResult.newState;
   messages.push(...attrResult.messages);
 
-  return { newState, messages, died: attrResult.died, deathMessage: attrResult.deathMessage };
+  return { newState, messages, died: attrResult.died, deathMessage: attrResult.deathMessage, triggerScene: attrResult.triggerScene };
 }
 
 /**

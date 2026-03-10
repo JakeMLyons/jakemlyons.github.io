@@ -3,10 +3,11 @@
  *
  * loadCampaign() accepts a { path, text } file list (normalised by the caller
  * from either a folder drop or ZIP extraction) and returns:
- *   { metadata, scenes, items, recipes, assets, assetsInMetadata }
+ *   { metadata, scenes, items, recipes, assets, attributes, assetsInMetadata }
  *
- * items shape:  { name: { description: string, affect_attributes: object } }
- * assets shape: { images: { key: url }, music: { key: url }, sfx: { key: url } }
+ * items shape:      { name: { description: string, affect_attributes: object } }
+ * assets shape:     { images: { key: url }, music: { key: url }, sfx: { key: url } }
+ * attributes shape: { name: { value, min?, max?, min_message?, min_scene?, max_scene?, label? } }
  * assetsInMetadata: boolean — true if metadata.yaml contained a top-level `assets:` block (should be a warning)
  *
  * validateCampaign() returns an array of { level: 'error'|'warning', message }
@@ -65,6 +66,12 @@ export async function loadCampaign(files) {
   }
   const metadata = metadataDoc.metadata ?? metadataDoc;
   const assetsInMetadata = Boolean(metadataDoc.assets);
+
+  // Top-level attributes block in metadata.yaml (outside 'metadata:')
+  let mergedAttributes = {};
+  if (metadataDoc.attributes && typeof metadataDoc.attributes === 'object') {
+    Object.assign(mergedAttributes, metadataDoc.attributes);
+  }
 
   // Collect scene files: all *.yaml at the root level except metadata.yaml
   const sceneFiles = normalised.filter((f) => {
@@ -130,6 +137,19 @@ export async function loadCampaign(files) {
       mergedRecipes.push(...recipes.filter((r) => r && r.inputs && r.output));
     }
 
+    // Merge top-level attributes block from scene files
+    const attrBlock = doc.attributes ?? {};
+    if (attrBlock && typeof attrBlock === 'object') {
+      for (const [attrName, attrDef] of Object.entries(attrBlock)) {
+        if (attrName in mergedAttributes) {
+          throw new Error(
+            `Duplicate attribute '${attrName}' found in '${filename}' (already defined elsewhere).`
+          );
+        }
+        mergedAttributes[attrName] = attrDef;
+      }
+    }
+
     // Merge assets — deep per-bucket; throw immediately on duplicate keys
     const assetBlock = doc.assets ?? {};
     for (const [bucket, entries] of Object.entries(assetBlock)) {
@@ -161,13 +181,21 @@ export async function loadCampaign(files) {
       mergedItems[name] = {
         description: String(value.description ?? ''),
         affect_attributes: value.affect_attributes ?? {},
+        icon: value.icon ?? null,
       };
     } else {
       mergedItems[name] = {
         description: String(value ?? ''),
         affect_attributes: {},
+        icon: null,
       };
     }
+  }
+
+  // Backward compatibility: if no top-level attributes were found,
+  // fall back to metadata.attributes (old location).
+  if (Object.keys(mergedAttributes).length === 0 && metadata.attributes) {
+    mergedAttributes = { ...metadata.attributes };
   }
 
   return {
@@ -176,6 +204,7 @@ export async function loadCampaign(files) {
     items: mergedItems,
     recipes: mergedRecipes,
     assets: mergedAssets,
+    attributes: mergedAttributes,
     assetsInMetadata,
   };
 }
@@ -191,7 +220,7 @@ export function validateCampaign(campaign) {
   const scenes = campaign.scenes ?? {};
   const metadata = campaign.metadata ?? {};
   const itemsRegistry = campaign.items ?? {};
-  const attrDefs = metadata.attributes ?? {};
+  const attrDefs = campaign.attributes ?? {};
   const assetRegistry = campaign.assets ?? {};
 
   function err(message) { results.push({ level: 'error', message }); }
@@ -211,6 +240,12 @@ export function validateCampaign(campaign) {
   for (const [attrName, def] of Object.entries(attrDefs)) {
     if (def.min != null && def.max != null && Number(def.min) >= Number(def.max)) {
       warn(`Attribute '${attrName}': min (${def.min}) is >= max (${def.max}).`);
+    }
+    if (def.min_scene && !(def.min_scene in scenes)) {
+      err(`Attribute '${attrName}': min_scene refers to unknown scene '${def.min_scene}'.`);
+    }
+    if (def.max_scene && !(def.max_scene in scenes)) {
+      err(`Attribute '${attrName}': max_scene refers to unknown scene '${def.max_scene}'.`);
     }
   }
 
@@ -334,7 +369,7 @@ export function validateCampaign(campaign) {
     })
   );
   if (hasAnyAffects && Object.keys(attrDefs).length === 0) {
-    warn("'affect_attributes' is used but no attributes are defined in metadata.attributes.");
+    warn("'affect_attributes' is used but no attributes are defined.");
   }
 
   // ── Reachability check (BFS from start) ──────────────────────────────────
@@ -366,6 +401,14 @@ export function validateCampaign(campaign) {
       warn(
         `Advisory: item '${itemName}' is used in the campaign but has no description in the items registry.`
       );
+    }
+  }
+
+  // ── Advisory: item icon references ──────────────────────────────────────
+
+  for (const [itemName, item] of Object.entries(itemsRegistry)) {
+    if (item?.icon && !(item.icon in (assetRegistry.images ?? {}))) {
+      warn(`Item '${itemName}': icon '${item.icon}' not found in assets.images.`);
     }
   }
 

@@ -2,7 +2,7 @@
  * dashboard.js — DOM wiring for dashboard.html.
  *
  * Self-contained module. Imports only from campaign.js — not from engine.js,
- * ui.js, persistence.js, or widget.js.
+ * ui.js, or persistence.js.
  *
  * Manages an in-memory library of up to 10 loaded campaign objects.
  * The library is NOT persisted to localStorage — campaigns must be
@@ -319,12 +319,37 @@ function renderLibrary() {
   }
 }
 
+function detectFeatures(campaign) {
+  const badges = [];
+  const scenes = campaign.scenes ?? {};
+  const attrs = campaign.attributes ?? campaign.metadata?.attributes ?? {};
+  const items = campaign.items ?? {};
+  const recipes = campaign.recipes ?? [];
+  const assets = campaign.assets ?? {};
+
+  if (Object.keys(attrs).length > 0) badges.push('⚙ attributes');
+  if (Object.keys(items).length > 0) badges.push('⚔ items');
+  if (recipes.length > 0) badges.push('⚗ recipes');
+
+  const hasAssets = ['images', 'music', 'sfx'].some(
+    (b) => assets[b] && Object.keys(assets[b]).length > 0
+  );
+  if (hasAssets) badges.push('♫ assets');
+
+  const hasJournal = Object.values(scenes).some((scene) => {
+    if (scene.on_enter?.gives_notes?.length > 0) return true;
+    return (scene.choices ?? []).some((c) => c.gives_notes?.length > 0);
+  });
+  if (hasJournal) badges.push('✐ journal');
+
+  return badges;
+}
+
 function buildCard(entry) {
   const { id, name, campaign, validation } = entry;
   const scenes = campaign.scenes ?? {};
   const sceneCount = Object.keys(scenes).length;
   const endingCount = Object.values(scenes).filter((s) => s.end).length;
-  const hasHealth = Object.keys(campaign.metadata?.attributes ?? {}).length > 0;
   const errorCount = validation.filter((r) => r.level === 'error').length;
 
   const card = document.createElement('div');
@@ -342,6 +367,7 @@ function buildCard(entry) {
   meta.className = 'campaign-card__meta';
   meta.textContent = `${sceneCount} scenes · ${endingCount} ending${endingCount !== 1 ? 's' : ''}`;
 
+  // Draft badge
   if (entry.isDraft) {
     const draftBadge = document.createElement('span');
     draftBadge.className = 'campaign-card__badge campaign-card__badge--draft';
@@ -349,13 +375,16 @@ function buildCard(entry) {
     meta.appendChild(draftBadge);
   }
 
-  if (hasHealth) {
-    const hBadge = document.createElement('span');
-    hBadge.className = 'campaign-card__badge campaign-card__badge--health';
-    hBadge.textContent = '♥ health';
-    meta.appendChild(hBadge);
+  // Feature badges
+  const featureBadges = detectFeatures(campaign);
+  for (const badge of featureBadges) {
+    const span = document.createElement('span');
+    span.className = 'campaign-card__badge campaign-card__badge--feature';
+    span.textContent = badge;
+    meta.appendChild(span);
   }
 
+  // Validation badge
   const validBadge = document.createElement('span');
   validBadge.className = 'campaign-card__badge ' +
     (errorCount === 0 ? 'campaign-card__badge--valid' : 'campaign-card__badge--error');
@@ -421,11 +450,20 @@ function renderDetail(entry) {
   const attrDefs = meta.attributes ?? {};
   const attrKeys = Object.keys(attrDefs);
   if (attrKeys.length > 0) {
-    const attrSummary = attrKeys.map((k) => {
+    const labelEl = document.createElement('div');
+    labelEl.className = 'detail-grid__label';
+    labelEl.textContent = 'Attributes';
+    grid.appendChild(labelEl);
+
+    const valueEl = document.createElement('div');
+    valueEl.className = 'detail-grid__value';
+    for (const k of attrKeys) {
       const def = attrDefs[k];
-      return `${def.label ?? k}: ${Number(def.value ?? 0)}`;
-    }).join(', ');
-    addGridRow(grid, 'Attributes', attrSummary);
+      const line = document.createElement('div');
+      line.textContent = `${def.label ?? k}: ${Number(def.value ?? 0)}`;
+      valueEl.appendChild(line);
+    }
+    grid.appendChild(valueEl);
   }
   addGridRow(grid, 'Starting inventory',
     (meta.inventory?.length > 0) ? meta.inventory.join(', ') : 'Empty');

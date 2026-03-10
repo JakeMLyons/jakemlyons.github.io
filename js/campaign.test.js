@@ -122,6 +122,70 @@ describe('validateCampaign()', () => {
     const warnings = validateCampaign(campaign).filter((r) => r.level === 'warning');
     assert.ok(!warnings.some((r) => r.message.includes("item 'magic orb'")));
   });
+
+  it('reports error for min_scene referencing unknown scene', () => {
+    const campaign = makeMinimalCampaign();
+    campaign.attributes = { health: { value: 100, min: 0, min_scene: 'ghost_scene' } };
+    const errors = validateCampaign(campaign).filter((r) => r.level === 'error');
+    assert.ok(errors.some((r) => r.message.includes("min_scene") && r.message.includes("'ghost_scene'")));
+  });
+
+  it('reports error for max_scene referencing unknown scene', () => {
+    const campaign = makeMinimalCampaign();
+    campaign.attributes = { power: { value: 0, max: 10, max_scene: 'ghost_scene' } };
+    const errors = validateCampaign(campaign).filter((r) => r.level === 'error');
+    assert.ok(errors.some((r) => r.message.includes("max_scene") && r.message.includes("'ghost_scene'")));
+  });
+
+  it('no error when min_scene/max_scene reference valid scenes', () => {
+    const campaign = makeMinimalCampaign();
+    campaign.attributes = { health: { value: 100, min: 0, min_scene: 'end' } };
+    const errors = validateCampaign(campaign).filter((r) => r.level === 'error');
+    assert.ok(!errors.some((r) => r.message.includes('min_scene')));
+  });
+});
+
+// ─── loadCampaign — attributes ──────────────────────────────────────────────
+
+describe('loadCampaign() — attributes', () => {
+  it('loads top-level attributes block from metadata.yaml', async () => {
+    const files = [
+      {
+        path: 'metadata.yaml',
+        text: 'metadata:\n  start: start\nattributes:\n  health:\n    value: 100\n    min: 0\n',
+      },
+      { path: 'scenes.yaml', text: 'scenes:\n  start:\n    text: Hi.\n    end: true\n' },
+    ];
+    const campaign = await loadCampaign(files);
+    assert.ok('health' in campaign.attributes);
+    assert.equal(campaign.attributes.health.value, '100');
+  });
+
+  it('falls back to metadata.attributes for backward compatibility', async () => {
+    const files = [
+      {
+        path: 'metadata.yaml',
+        text: 'metadata:\n  start: start\n  attributes:\n    health:\n      value: 50\n',
+      },
+      { path: 'scenes.yaml', text: 'scenes:\n  start:\n    text: Hi.\n    end: true\n' },
+    ];
+    const campaign = await loadCampaign(files);
+    assert.ok('health' in campaign.attributes);
+    assert.equal(campaign.attributes.health.value, '50');
+  });
+
+  it('top-level attributes take precedence over metadata.attributes', async () => {
+    const files = [
+      {
+        path: 'metadata.yaml',
+        text: 'metadata:\n  start: start\n  attributes:\n    health:\n      value: 50\nattributes:\n  power:\n    value: 10\n',
+      },
+      { path: 'scenes.yaml', text: 'scenes:\n  start:\n    text: Hi.\n    end: true\n' },
+    ];
+    const campaign = await loadCampaign(files);
+    assert.ok('power' in campaign.attributes);
+    assert.ok(!('health' in campaign.attributes));
+  });
 });
 
 // ─── loadCampaign ─────────────────────────────────────────────────────────────

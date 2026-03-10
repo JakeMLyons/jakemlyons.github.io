@@ -801,7 +801,7 @@ details[open] .ed-collapsible__header::before {
 .ed-choices-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 0.5em;
   margin-bottom: 0.5em;
 }
 
@@ -919,6 +919,12 @@ details[open] .ed-collapsible__header::before {
 
 .ed-item-row__desc {
   flex: 1;
+  min-width: 0;
+}
+
+.ed-item-row__icon {
+  width: 120px;
+  flex-shrink: 0;
 }
 
 .ed-item-row__warn {
@@ -1080,6 +1086,40 @@ details[open] .ed-collapsible__header::before {
   font-size: 0.8rem;
   color: var(--ta-text-muted);
   font-style: italic;
+}
+
+/* Collapsible toggle for affect_attributes */
+.ed-collapsible__toggle {
+  background: none;
+  border: 1px solid var(--ta-border);
+  border-radius: var(--ta-radius);
+  color: var(--ta-text-muted);
+  font-family: var(--ta-font-ui);
+  font-size: 0.78rem;
+  padding: 0.2em 0.5em;
+  cursor: pointer;
+  margin-bottom: 0.3em;
+}
+
+.ed-collapsible__toggle:hover {
+  color: var(--ta-text);
+  border-color: var(--ta-text-muted);
+}
+
+/* Go-to button next to Next scene dropdown */
+.ed-choice-next-wrap {
+  display: flex;
+  gap: 0.3em;
+  align-items: center;
+}
+
+.ed-choice-next-wrap .ed-select {
+  flex: 1;
+}
+
+.ed-choice-goto {
+  flex-shrink: 0;
+  padding: 0.2em 0.5em;
 }
 
 /* Label variant that aligns to the top of its grid cell */

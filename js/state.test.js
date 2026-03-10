@@ -85,15 +85,15 @@ describe('PlayerState.fromDict() backward compatibility', () => {
 });
 
 describe('PlayerState.fromCampaign()', () => {
-  it('reads metadata.attributes and inventory correctly', () => {
+  it('reads campaign.attributes and inventory correctly', () => {
     const campaign = {
       metadata: {
         start: 'begin',
-        attributes: {
-          health: { value: 100 },
-          sanity: { value: 10 },
-        },
         inventory: ['torch'],
+      },
+      attributes: {
+        health: { value: 100 },
+        sanity: { value: 10 },
       },
       scenes: {},
       items: {},
@@ -108,6 +108,7 @@ describe('PlayerState.fromCampaign()', () => {
   it('handles missing attributes block', () => {
     const campaign = {
       metadata: { start: 'begin' },
+      attributes: {},
       scenes: {},
       items: {},
     };
@@ -119,10 +120,8 @@ describe('PlayerState.fromCampaign()', () => {
 
   it('coerces string attribute values to numbers', () => {
     const campaign = {
-      metadata: {
-        start: 'begin',
-        attributes: { health: { value: '50' } },
-      },
+      metadata: { start: 'begin' },
+      attributes: { health: { value: '50' } },
       scenes: {},
       items: {},
     };
