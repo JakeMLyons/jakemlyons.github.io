@@ -5,13 +5,15 @@
  *          serialise.js (serialiseCampaign)
  *
  * Architecture:
- *   Code mode  — fileMap (Map<filename, string>) is source of truth.
- *   Visual mode — campaign object is source of truth.
- *   Modes sync on switch: Code→Visual parses fileMap; Visual→Code serialises campaign.
+ *   Code mode   — fileMap (Map<filename, string>) is source of truth.
+ *   Form mode   — campaign object is source of truth (structured form editor).
+ *   Visual mode — campaign object is source of truth (Cytoscape flowchart).
+ *   Modes sync on switch: Code→Form/Visual parses fileMap; Form/Visual→Code serialises campaign.
  */
 
 import { loadCampaign, validateCampaign, RESERVED_COMMAND_NAMES } from './campaign.js';
 import { serialiseCampaign } from './serialise.js';
+import { initFlowEditor, destroyFlowEditor, cancelEdgeSource, getNodePositions, focusNode } from './visual-editor.js';
 
 // ─── Module-scoped state ──────────────────────────────────────────────────────
 
@@ -19,7 +21,7 @@ let fileMap  = new Map();   // Code mode source of truth: filename → YAML text
 let campaign = null;        // Visual mode source of truth: { metadata, scenes, items }
 let activeFile  = null;     // selected filename in file tree (Code mode)
 let activeScene = null;     // selected scene ID in visual editor
-let mode = 'code';          // 'code' | 'visual'
+let mode = 'code';          // 'code' | 'form' | 'visual'
 let codeEdited = false;     // user has typed in Code mode this session
 let warningAcknowledged = false; // round-trip warning dialog dismissed
 let isDirty = false;        // unsaved changes since last ZIP export or campaign load
@@ -70,6 +72,7 @@ const edScenesNav    = document.getElementById('ed-scenes-nav');
 
 // Mode toggle
 const edModeCode   = document.getElementById('ed-mode-code');
+const edModeForm   = document.getElementById('ed-mode-form');
 const edModeVisual = document.getElementById('ed-mode-visual');
 
 // Code pane
@@ -78,13 +81,22 @@ const edParseError = document.getElementById('ed-parse-error');
 const edLineNums   = document.getElementById('ed-line-nums');
 const edTextarea   = document.getElementById('ed-textarea');
 
-// Visual pane
+// Form pane (was: Visual pane)
 const edVisualPane  = document.getElementById('ed-visual-pane');
 const edMetaForm    = document.getElementById('ed-meta-form');
 const edSceneForm   = document.getElementById('ed-scene-form');
 const edItemsForm   = document.getElementById('ed-items-form');
 const edSceneGraph    = document.getElementById('ed-scene-graph');
 const edSceneGraphSvg = document.getElementById('ed-scene-graph-svg');
+
+// Flow (Visual) pane
+const edFlowPane        = document.getElementById('ed-flow-pane');
+const edFlowCy          = document.getElementById('ed-flow-cy');
+const edFlowFitBtn      = document.getElementById('ed-flow-fit');
+const edFlowContextMenu = document.getElementById('ed-flow-context-menu');
+
+// Choice context menu (shown on right-click of an edge)
+const edFlowChoiceContextMenu = document.getElementById('ed-flow-choice-context-menu');
 
 // Metadata form fields
 const edMetaTitle          = document.getElementById('ed-meta-title');
@@ -170,6 +182,7 @@ document.addEventListener('DOMContentLoaded', () => {
   wireModeToggle();
   wireCodePane();
   wireVisualPane();
+  wireFlowPane();
   wireValidationPanel();
   wireModals();
   wireResizer();
@@ -511,6 +524,7 @@ function clearDirty() {
 function saveDraft() {
   if (!campaign) return;
   const map = (mode === 'code') ? fileMap : serialiseCampaign(campaign, fileMap);
+  // Note: both 'form' and 'visual' modes use campaign as source of truth
   const draft = {
     savedAt: new Date().toISOString(),
     files:   Object.fromEntries(map),
@@ -550,10 +564,43 @@ function wireModeToggle() {
     switchToCode();
   });
 
+  edModeForm.addEventListener('click', () => {
+    if (mode === 'form') return;
+    if (mode === 'code') attemptSwitchToForm();
+    else { mode = 'form'; activateFormMode(); scheduleValidation(); }
+  });
+
   edModeVisual.addEventListener('click', () => {
     if (mode === 'visual') return;
-    attemptSwitchToVisual();
+    if (mode === 'code') attemptSwitchToVisual();
+    else { mode = 'visual'; activateVisualMode(); scheduleValidation(); }
   });
+}
+
+async function attemptSwitchToForm() {
+  // Block if parse errors exist
+  if (!edParseError.classList.contains('hidden')) {
+    showToast('Fix parse errors before switching to Form mode.');
+    return;
+  }
+
+  // Warn if user has hand-authored YAML that would be lost on round-trip
+  if (codeEdited && !warningAcknowledged) {
+    const confirmed = await showSwitchWarning();
+    if (!confirmed) return;
+    warningAcknowledged = true;
+  }
+
+  try {
+    campaign = await loadCampaign(filesToArray(fileMap));
+  } catch (e) {
+    showToast('Cannot switch: ' + e.message);
+    return;
+  }
+
+  mode = 'form';
+  activateFormMode();
+  scheduleValidation();
 }
 
 async function attemptSwitchToVisual() {
@@ -583,6 +630,7 @@ async function attemptSwitchToVisual() {
 }
 
 function switchToCode() {
+  destroyFlowEditor();
   fileMap = serialiseCampaign(campaign, fileMap);
   buildSceneFileMap();
   mode = 'code';
@@ -597,9 +645,12 @@ function activateCodeMode(selectFirst, preferScenes = false) {
   // Toggle panes
   edCodePane.classList.remove('hidden');
   edVisualPane.classList.add('hidden');
+  edFlowPane.classList.add('hidden');
   // Toggle mode buttons
   edModeCode.classList.add('ed-mode-btn--active');
   edModeCode.setAttribute('aria-selected', 'true');
+  edModeForm.classList.remove('ed-mode-btn--active');
+  edModeForm.setAttribute('aria-selected', 'false');
   edModeVisual.classList.remove('ed-mode-btn--active');
   edModeVisual.setAttribute('aria-selected', 'false');
 
@@ -618,18 +669,29 @@ function activateCodeMode(selectFirst, preferScenes = false) {
   }
 }
 
-function activateVisualMode() {
+// When in Visual mode, switches to Form before executing a sidebar action.
+function ensureFormMode() {
+  if (mode !== 'visual') return;
+  mode = 'form';
+  activateFormMode();
+  scheduleValidation();
+}
+
+function activateFormMode() {
   // Toggle sidebar
   edFiletree.classList.add('hidden');
   edScenelist.classList.remove('hidden');
   // Toggle panes
   edCodePane.classList.add('hidden');
   edVisualPane.classList.remove('hidden');
+  edFlowPane.classList.add('hidden');
   // Toggle mode buttons
-  edModeVisual.classList.add('ed-mode-btn--active');
-  edModeVisual.setAttribute('aria-selected', 'true');
+  edModeForm.classList.add('ed-mode-btn--active');
+  edModeForm.setAttribute('aria-selected', 'true');
   edModeCode.classList.remove('ed-mode-btn--active');
   edModeCode.setAttribute('aria-selected', 'false');
+  edModeVisual.classList.remove('ed-mode-btn--active');
+  edModeVisual.setAttribute('aria-selected', 'false');
 
   refreshItemDatalist();
   populateMetadataForm();
@@ -637,6 +699,26 @@ function activateVisualMode() {
 
   // Show metadata form by default
   showMetadataForm();
+}
+
+function activateVisualMode() {
+  // Toggle sidebar
+  edFiletree.classList.add('hidden');
+  edScenelist.classList.remove('hidden');
+  // Toggle panes
+  edCodePane.classList.add('hidden');
+  edVisualPane.classList.add('hidden');
+  edFlowPane.classList.remove('hidden');
+  // Toggle mode buttons
+  edModeVisual.classList.add('ed-mode-btn--active');
+  edModeVisual.setAttribute('aria-selected', 'true');
+  edModeCode.classList.remove('ed-mode-btn--active');
+  edModeCode.setAttribute('aria-selected', 'false');
+  edModeForm.classList.remove('ed-mode-btn--active');
+  edModeForm.setAttribute('aria-selected', 'false');
+
+  renderFlowEditor();
+  if (activeScene) focusNode(activeScene);
 }
 
 // ─── Code mode ────────────────────────────────────────────────────────────────
@@ -823,14 +905,15 @@ function wireVisualPane() {
   });
 
   // Scene list controls
-  edMetaNav.addEventListener('click', showMetadataForm);
-  edAttributesNav.addEventListener('click', showAttributesForm);
-  edScenesNav.addEventListener('click', showScenesView);
+  // Sidebar nav always shows the Form pane; if currently in Visual mode, switch first.
+  edMetaNav.addEventListener('click', () => { ensureFormMode(); showMetadataForm(); });
+  edAttributesNav.addEventListener('click', () => { ensureFormMode(); showAttributesForm(); });
+  edScenesNav.addEventListener('click', () => { ensureFormMode(); showScenesView(); });
   edAddSceneBtn.addEventListener('click', addScene);
-  edItemsNav.addEventListener('click', showItemsForm);
-  edRecipesNav.addEventListener('click', showRecipesForm);
+  edItemsNav.addEventListener('click', () => { ensureFormMode(); showItemsForm(); });
+  edRecipesNav.addEventListener('click', () => { ensureFormMode(); showRecipesForm(); });
   edAddRecipe.addEventListener('click', addRecipeRow);
-  edAssetsNav.addEventListener('click', showAssetsForm);
+  edAssetsNav.addEventListener('click', () => { ensureFormMode(); showAssetsForm(); });
 
   // Scene form controls
   edSceneRenameBtn.addEventListener('click', openRenameModal);
@@ -1172,7 +1255,7 @@ function buildSceneListItem(sceneId, sceneData, isStart) {
 
   if (sceneData.text) li.title = sceneData.text.slice(0, 200) + (sceneData.text.length > 200 ? '…' : '');
 
-  li.addEventListener('click', () => selectScene(sceneId));
+  li.addEventListener('click', () => { ensureFormMode(); selectScene(sceneId); });
   return li;
 }
 
@@ -2530,6 +2613,248 @@ function makeAffectAttributesEditor(container, currentAttrs, onChange) {
   container.appendChild(wrapper);
 }
 
+// ─── Flow (Visual) pane wiring ────────────────────────────────────────────────
+
+function wireFlowPane() {
+  edFlowFitBtn.addEventListener('click', () => {
+    if (mode === 'visual') renderFlowEditor(/* refit */ true);
+  });
+
+  // Context menu item dispatch
+  edFlowContextMenu.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    hideFlowContextMenu();
+    const action  = btn.dataset.action;
+    const sceneId = edFlowContextMenu.dataset.sceneId;
+    if (!sceneId || !campaign) return;
+    if (action === 'edit') {
+      mode = 'form';
+      activateFormMode();
+      selectScene(sceneId);
+    } else if (action === 'rename') {
+      activeScene = sceneId;
+      openRenameModal(sceneId);
+    } else if (action === 'set-start') {
+      campaign.metadata.start = sceneId;
+      markDirty();
+      scheduleValidation();
+      renderFlowEditor();
+    } else if (action === 'delete') {
+      if (Object.keys(campaign.scenes).length <= 1) {
+        showToast('Cannot delete the only scene.');
+        return;
+      }
+      const refs = countRefsToScene(sceneId);
+      if (refs > 0 && !confirm(`Delete '${sceneId}'? It is referenced by ${refs} choice${refs !== 1 ? 's' : ''}.`)) return;
+      deleteSceneAndRefs(sceneId);
+      markDirty();
+      scheduleValidation();
+      renderFlowEditor();
+      showToast(`Scene '${sceneId}' deleted.`);
+    }
+  });
+
+  // Choice context menu actions
+  edFlowChoiceContextMenu.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    const sceneId   = edFlowChoiceContextMenu.dataset.sceneId;
+    const choiceIdx = Number(edFlowChoiceContextMenu.dataset.choiceIdx);
+    hideChoiceContextMenu();
+    if (!sceneId || !campaign?.scenes?.[sceneId]) return;
+    if (btn.dataset.action === 'edit') {
+      mode = 'form';
+      activateFormMode();
+      selectScene(sceneId);
+      requestAnimationFrame(() => {
+        const cards = edChoicesList.querySelectorAll('.ed-choice-card');
+        if (cards[choiceIdx]) cards[choiceIdx].scrollIntoView({ block: 'nearest' });
+      });
+    } else if (btn.dataset.action === 'retarget') {
+      const choices = campaign.scenes[sceneId].choices ?? [];
+      if (choiceIdx < 0 || choiceIdx >= choices.length) return;
+      const current = choices[choiceIdx].next ?? '';
+      const newTarget = prompt('Target scene ID:', current);
+      if (newTarget === null) return;
+      const trimmed = newTarget.trim();
+      if (!trimmed) { showToast('Target scene ID cannot be empty.'); return; }
+      if (!campaign.scenes[trimmed]) { showToast(`Scene '${trimmed}' does not exist.`); return; }
+      choices[choiceIdx].next = trimmed;
+      markDirty();
+      scheduleValidation();
+      renderFlowEditor();
+    } else if (btn.dataset.action === 'delete') {
+      const choices = campaign.scenes[sceneId].choices ?? [];
+      if (choiceIdx < 0 || choiceIdx >= choices.length) return;
+      choices.splice(choiceIdx, 1);
+      markDirty();
+      scheduleValidation();
+      renderFlowEditor();
+    }
+  });
+
+  // Dismiss overlays on outside click
+  document.addEventListener('click', (e) => {
+    if (!edFlowContextMenu.classList.contains('hidden') &&
+        !edFlowContextMenu.contains(e.target)) hideFlowContextMenu();
+    if (!edFlowChoiceContextMenu.classList.contains('hidden') &&
+        !edFlowChoiceContextMenu.contains(e.target)) hideChoiceContextMenu();
+  });
+
+  // Escape — cancel edge draw and close overlays
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      hideFlowContextMenu();
+      hideChoiceContextMenu();
+      if (mode === 'visual') cancelEdgeSource();
+    }
+  });
+}
+
+function hideFlowContextMenu() {
+  edFlowContextMenu.classList.add('hidden');
+}
+
+function showFlowContextMenu(sceneId, x, y) {
+  edFlowContextMenu.dataset.sceneId = sceneId;
+  edFlowContextMenu.style.left = x + 'px';
+  edFlowContextMenu.style.top  = y + 'px';
+  edFlowContextMenu.classList.remove('hidden');
+  const isStart = campaign?.metadata?.start === sceneId;
+  const setStartBtn = edFlowContextMenu.querySelector('[data-action="set-start"]');
+  if (setStartBtn) setStartBtn.disabled = isStart;
+}
+
+function showChoiceContextMenu(sceneId, choiceIdx, x, y) {
+  if (!campaign?.scenes?.[sceneId]?.choices?.[choiceIdx]) return;
+  edFlowChoiceContextMenu.dataset.sceneId   = sceneId;
+  edFlowChoiceContextMenu.dataset.choiceIdx = choiceIdx;
+  edFlowChoiceContextMenu.style.left = x + 'px';
+  edFlowChoiceContextMenu.style.top  = y + 'px';
+  edFlowChoiceContextMenu.classList.remove('hidden');
+}
+
+function hideChoiceContextMenu() {
+  edFlowChoiceContextMenu.classList.add('hidden');
+}
+
+function renderFlowEditor(refit = false) {
+  if (!campaign) return;
+
+  // Snapshot current node positions before rebuild so the layout never resets.
+  const livePositions = getNodePositions();
+  if (Object.keys(livePositions).length > 0) {
+    campaign._editorMeta = campaign._editorMeta ?? {};
+    campaign._editorMeta.positions = { ...campaign._editorMeta.positions, ...livePositions };
+  }
+
+  const flowCallbacks = {
+    onNodeDblClick(sceneId) {
+      mode = 'form';
+      activateFormMode();
+      selectScene(sceneId);
+    },
+    onNodeRightClick(sceneId, x, y) {
+      hideChoiceContextMenu();
+      showFlowContextMenu(sceneId, x, y);
+    },
+    onEdgeCreated(fromId, toId) {
+      const label = prompt(`Choice label from '${fromId}' to '${toId}':`, 'Go forward');
+      if (!label) return;
+      const scene = campaign.scenes[fromId];
+      if (!scene) return;
+      scene.choices = scene.choices ?? [];
+      scene.choices.push({ label, next: toId });
+      markDirty();
+      scheduleValidation();
+      renderFlowEditor();
+    },
+    onChoiceRetarget(sceneId, choiceIdx, newTargetId) {
+      const choices = campaign.scenes[sceneId]?.choices;
+      if (!choices || choiceIdx < 0 || choiceIdx >= choices.length) return;
+      if (!campaign.scenes[newTargetId]) return;
+      choices[choiceIdx].next = newTargetId;
+      markDirty();
+      scheduleValidation();
+      renderFlowEditor();
+    },
+    onChoiceClick() {
+      // Left-click just highlights the edge (handled in visual-editor.js); no overlay shown.
+      hideFlowContextMenu();
+      hideChoiceContextMenu();
+    },
+    onChoiceDblClick(sceneId) {
+      hideChoiceContextMenu();
+      hideFlowContextMenu();
+      mode = 'form';
+      activateFormMode();
+      selectScene(sceneId);
+    },
+    onChoiceRightClick(sceneId, choiceIdx, x, y) {
+      hideFlowContextMenu();
+      showChoiceContextMenu(sceneId, choiceIdx, x, y);
+    },
+    onCreateScene(x, y) {
+      const id = promptNewSceneId();
+      if (!id) return;
+      campaign.scenes[id] = { text: '', choices: [] };
+      campaign._editorMeta = campaign._editorMeta ?? {};
+      campaign._editorMeta.positions = campaign._editorMeta.positions ?? {};
+      campaign._editorMeta.positions[id] = { x, y };
+      markDirty();
+      scheduleValidation();
+      renderFlowEditor();
+      showToast(`Scene '${id}' created.`);
+    },
+    onPositionsChanged(positions) {
+      campaign._editorMeta = campaign._editorMeta ?? {};
+      campaign._editorMeta.positions = positions;
+    },
+    onBackgroundClick() {
+      hideChoiceContextMenu();
+      hideFlowContextMenu();
+    },
+  };
+
+  const savedPositions = campaign._editorMeta?.positions ?? {};
+  initFlowEditor(edFlowCy, campaign, flowCallbacks, savedPositions, refit);
+}
+
+function promptNewSceneId() {
+  const raw = prompt('New scene ID (letters, digits, underscores):');
+  if (!raw) return null;
+  const id = raw.trim();
+  if (!id) { showToast('Scene ID cannot be empty.'); return null; }
+  if (/\s/.test(id)) { showToast('Scene ID cannot contain spaces.'); return null; }
+  if (RESERVED_COMMAND_NAMES.has(id)) { showToast(`'${id}' is a reserved name.`); return null; }
+  if (campaign.scenes[id]) { showToast(`Scene '${id}' already exists.`); return null; }
+  return id;
+}
+
+function countRefsToScene(sceneId) {
+  let count = 0;
+  for (const scene of Object.values(campaign.scenes)) {
+    for (const choice of scene.choices ?? []) {
+      if (choice.next === sceneId) count++;
+    }
+  }
+  return count;
+}
+
+function deleteSceneAndRefs(sceneId) {
+  delete campaign.scenes[sceneId];
+  if (campaign.metadata?.start === sceneId) campaign.metadata.start = undefined;
+  // Remove choices pointing to deleted scene
+  for (const scene of Object.values(campaign.scenes)) {
+    scene.choices = (scene.choices ?? []).filter(c => c.next !== sceneId);
+  }
+  // Clean up _editorMeta positions
+  if (campaign._editorMeta?.positions) {
+    delete campaign._editorMeta.positions[sceneId];
+  }
+}
+
 // ─── Validation panel ─────────────────────────────────────────────────────────
 
 function wireValidationPanel() {
@@ -2622,7 +2947,8 @@ function navigateToValidationItem(result) {
       const lineHeight = parseFloat(getComputedStyle(edTextarea).lineHeight) || 20;
       edTextarea.scrollTop = linesBefore * lineHeight;
     }
-  } else if (mode === 'visual' && sceneId && campaign.scenes?.[sceneId]) {
+  } else if ((mode === 'form' || mode === 'visual') && sceneId && campaign.scenes?.[sceneId]) {
+    if (mode === 'visual') { mode = 'form'; activateFormMode(); }
     selectScene(sceneId);
   }
 }
@@ -2638,7 +2964,7 @@ function updateActionButtons(parseErr, results) {
 // ─── Export & Play ────────────────────────────────────────────────────────────
 
 async function downloadZip() {
-  const map = mode === 'code'
+  const map = (mode === 'code')
     ? fileMap
     : serialiseCampaign(campaign, fileMap);
 
@@ -2672,6 +2998,7 @@ async function playCampaign() {
     try { c = await loadCampaign(filesToArray(fileMap)); }
     catch { return; }
   }
+  // 'form' and 'visual' modes both use campaign object directly
 
   const name       = c?.metadata?.title ?? 'Campaign';
   const serialised = JSON.stringify({ campaign: c, name });
@@ -2717,10 +3044,19 @@ function wireModals() {
 
     activeScene = newId;
     closeRenameModal();
-    populateStartSelect();
-    renderSceneList();
-    selectScene(newId);
+    // Rekey _editorMeta positions if present
+    if (campaign._editorMeta?.positions?.[oldId]) {
+      campaign._editorMeta.positions[newId] = campaign._editorMeta.positions[oldId];
+      delete campaign._editorMeta.positions[oldId];
+    }
     scheduleValidation();
+    if (mode === 'visual') {
+      renderFlowEditor();
+    } else {
+      populateStartSelect();
+      renderSceneList();
+      selectScene(newId);
+    }
     showToast(`Renamed '${oldId}' → '${newId}'. ${refCount} reference${refCount !== 1 ? 's' : ''} updated.`);
   });
 

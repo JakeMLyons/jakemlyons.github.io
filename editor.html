@@ -155,6 +155,8 @@
       <div class="ed-mode-toggle" role="tablist">
         <button id="ed-mode-code" class="ed-mode-btn ed-mode-btn--active" role="tab"
                 aria-selected="true">Code</button>
+        <button id="ed-mode-form" class="ed-mode-btn" role="tab"
+                aria-selected="false">Form</button>
         <button id="ed-mode-visual" class="ed-mode-btn" role="tab"
                 aria-selected="false">Visual</button>
       </div>
@@ -340,6 +342,15 @@
 
       </div><!-- #ed-visual-pane -->
 
+      <!-- ── Flow (Visual) pane ──────────────────────────────────────────── -->
+      <div id="ed-flow-pane" class="ed-flow-pane hidden">
+        <div id="ed-flow-toolbar" class="ed-flow-toolbar">
+          <button class="btn btn--ghost btn--small" id="ed-flow-fit" title="Fit all nodes in view">Fit</button>
+          <span class="ed-flow-toolbar__hint">Ctrl+drag to connect · Double-click canvas to add scene · Right-click for options</span>
+        </div>
+        <div id="ed-flow-cy" class="ed-flow-cy"></div>
+      </div>
+
     </main>
 
     <!-- ── Validation panel ───────────────────────────────────────────────── -->
@@ -376,9 +387,24 @@
     </div>
   </div>
 
+  <!-- Choice context menu (shown on right-click of an edge) -->
+  <div id="ed-flow-choice-context-menu" class="ed-flow-context-menu hidden">
+    <button class="ed-flow-context-menu__item" data-action="edit">Edit in Form</button>
+    <button class="ed-flow-context-menu__item" data-action="retarget">Change target…</button>
+    <button class="ed-flow-context-menu__item ed-flow-context-menu__item--danger" data-action="delete">Delete choice</button>
+  </div>
+
+  <!-- Flow canvas context menu (shown on right-click of a node) -->
+  <div id="ed-flow-context-menu" class="ed-flow-context-menu hidden">
+    <button class="ed-flow-context-menu__item" data-action="edit">Edit scene</button>
+    <button class="ed-flow-context-menu__item" data-action="rename">Rename ID…</button>
+    <button class="ed-flow-context-menu__item" data-action="set-start">Set as start scene</button>
+    <button class="ed-flow-context-menu__item ed-flow-context-menu__item--danger" data-action="delete">Delete scene</button>
+  </div>
+
   <!-- Mode-switch warning dialog (native <dialog>) -->
   <dialog id="ed-switch-dialog" class="ed-dialog">
-    <p>Switching to Visual mode will discard your YAML formatting and comments if you
+    <p>Switching to Form mode will discard your YAML formatting and comments if you
        switch back to Code. Continue?</p>
     <div class="ed-dialog__actions">
       <button class="btn btn--ghost btn--small" id="ed-switch-cancel">Cancel</button>
@@ -397,6 +423,9 @@
 <!-- Vendor libs (loaded as globals before any module) -->
 <script src="vendor/js-yaml.min.js"></script>
 <script src="vendor/jszip.min.js"></script>
+<script src="vendor/cytoscape.min.js"></script>
+<script src="vendor/lodash-shim.js"></script>
+<script src="vendor/cytoscape-edgehandles.js"></script>
 
 <!-- Editor module -->
 <script type="module" src="js/editor.js"></script>
