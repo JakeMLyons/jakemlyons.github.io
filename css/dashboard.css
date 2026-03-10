@@ -201,10 +201,10 @@ body {
   border-color: var(--ta-danger);
 }
 
-.campaign-card__badge--health {
+.campaign-card__badge--feature {
   background-color: color-mix(in srgb, var(--ta-accent) 15%, var(--ta-surface));
   color: var(--ta-accent);
-  border-color: var(--ta-accent);
+  border-color: color-mix(in srgb, var(--ta-accent) 40%, transparent);
 }
 
 .campaign-card__badge--draft {

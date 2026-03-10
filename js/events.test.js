@@ -27,7 +27,7 @@ function makeState(overrides = {}) {
 
 /** Campaign with a single health attribute (min 0, max 100). */
 function makeCampaign(attrDefs = { health: { value: 100, min: 0, max: 100 } }) {
-  return { metadata: { attributes: attrDefs }, items: {} };
+  return { metadata: {}, attributes: attrDefs, items: {} };
 }
 
 // ─── applyItemGrants ─────────────────────────────────────────────────────────
@@ -281,6 +281,39 @@ describe('applyAttributeEffects()', () => {
     const state = makeState({ attributes: { health: 100 } });
     applyAttributeEffects({ affect_attributes: { health: -10 } }, state, makeCampaign());
     assert.equal(state.attributes.health, 100);
+  });
+
+  it('returns triggerScene when min_scene is defined', () => {
+    const state = makeState({ attributes: { health: 5 } });
+    const campaign = makeCampaign({ health: { value: 100, min: 0, max: 100, min_scene: 'death_scene' } });
+    const { triggerScene, died } = applyAttributeEffects(
+      { affect_attributes: { health: -20 } },
+      state,
+      campaign
+    );
+    assert.equal(triggerScene, 'death_scene');
+    assert.equal(died, false);
+  });
+
+  it('returns triggerScene for max_scene when max is reached', () => {
+    const state = makeState({ attributes: { power: 8 } });
+    const campaign = makeCampaign({ power: { value: 0, max: 10, max_scene: 'ascend' } });
+    const { triggerScene } = applyAttributeEffects(
+      { affect_attributes: { power: 5 } },
+      state,
+      campaign
+    );
+    assert.equal(triggerScene, 'ascend');
+  });
+
+  it('returns null triggerScene when no boundary scenes defined', () => {
+    const state = makeState({ attributes: { health: 100 } });
+    const { triggerScene } = applyAttributeEffects(
+      { affect_attributes: { health: -10 } },
+      state,
+      makeCampaign()
+    );
+    assert.equal(triggerScene, null);
   });
 });
 

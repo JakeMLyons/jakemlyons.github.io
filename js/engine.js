@@ -102,7 +102,13 @@ export class GameEngine {
     state = result.newState;
     messages.push(...result.messages);
 
-    // 4. Death check after choice effects
+    // 4. Boundary check after choice effects
+    if (result.triggerScene) {
+      // Attribute boundary → redirect to linked scene instead of choice.next
+      const nextState = state.copy();
+      nextState.sceneId = result.triggerScene;
+      return this._enterScene(nextState, messages, choiceSfx);
+    }
     if (result.died) {
       const currentScene = this._scenes[state.sceneId];
       const currentAssets = this._resolveAssets(currentScene.assets ?? null);
@@ -152,7 +158,14 @@ export class GameEngine {
     state = result.newState;
     messages.push(...result.messages);
 
-    // 6.5 Death check after on_enter effects
+    // 6.5 Boundary check after on_enter effects
+    if (result.triggerScene) {
+      // Attribute boundary → redirect to linked scene (cap at one redirect per turn)
+      const redirectState = state.copy();
+      redirectState.visited.push(state.sceneId); // record this scene before redirecting
+      redirectState.sceneId = result.triggerScene;
+      return this._enterScene(redirectState, messages, allSfx);
+    }
     if (result.died) {
       return new GameOutput({
         state,

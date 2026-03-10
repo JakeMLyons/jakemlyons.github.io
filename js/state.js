@@ -64,12 +64,12 @@ export class PlayerState {
   /**
    * Builds the default starting state from campaign metadata.
    * Initialises each attribute to its declared starting value.
-   * @param {object} campaign - { metadata, scenes, items }
+   * @param {object} campaign - { metadata, scenes, items, attributes }
    * @returns {PlayerState}
    */
   static fromCampaign(campaign) {
     const meta = campaign.metadata ?? {};
-    const attrDefs = meta.attributes ?? {};
+    const attrDefs = campaign.attributes ?? meta.attributes ?? {};
     const attributes = {};
     for (const [name, def] of Object.entries(attrDefs)) {
       attributes[name] = Number(def.value ?? 0);

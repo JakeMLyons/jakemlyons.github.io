@@ -111,6 +111,8 @@ const edOeRemovesItemsCtr = document.getElementById('ed-oe-removes-items-contain
 const edOeGivesNotesCtr   = document.getElementById('ed-oe-gives-notes-container');
 const edChoicesSection = document.getElementById('ed-choices-section');
 const edAddChoiceBtn   = document.getElementById('ed-add-choice');
+const edExpandAllBtn   = document.getElementById('ed-expand-all-choices');
+const edCollapseAllBtn = document.getElementById('ed-collapse-all-choices');
 const edChoicesList    = document.getElementById('ed-choices-list');
 
 // Items form
@@ -810,11 +812,11 @@ function wireVisualPane() {
     scheduleValidation();
   });
   edMetaAddAttr.addEventListener('click', () => {
-    if (!campaign.metadata.attributes) campaign.metadata.attributes = {};
+    if (!campaign.attributes) campaign.attributes = {};
     let n = 1;
-    while (campaign.metadata.attributes[`attr_${n}`] !== undefined) n++;
+    while (campaign.attributes[`attr_${n}`] !== undefined) n++;
     const name = `attr_${n}`;
-    campaign.metadata.attributes[name] = { value: 0 };
+    campaign.attributes[name] = { value: 0 };
     renderAttributesEditor();
     scheduleValidation();
     markDirty();
@@ -853,6 +855,24 @@ function wireVisualPane() {
 
   // Add choice button
   edAddChoiceBtn.addEventListener('click', addChoice);
+
+  // Expand / Collapse all choices
+  edExpandAllBtn.addEventListener('click', () => {
+    for (const card of edChoicesList.querySelectorAll('.ed-choice-card')) {
+      const body = card.querySelector('.ed-choice-card__body');
+      const toggle = card.querySelector('.ed-choice-card__btn');
+      if (body) body.style.display = '';
+      if (toggle) toggle.textContent = '▲';
+    }
+  });
+  edCollapseAllBtn.addEventListener('click', () => {
+    for (const card of edChoicesList.querySelectorAll('.ed-choice-card')) {
+      const body = card.querySelector('.ed-choice-card__body');
+      const toggle = card.querySelector('.ed-choice-card__btn');
+      if (body) body.style.display = 'none';
+      if (toggle) toggle.textContent = '▼';
+    }
+  });
 
   // Items registry
   edAddItem.addEventListener('click', addItemRow);
@@ -1499,7 +1519,7 @@ function buildChoiceCard(sceneId, index) {
 
   const toggle = document.createElement('button');
   toggle.className = 'ed-choice-card__btn';
-  toggle.textContent = '▼';
+  toggle.textContent = '▲';
   toggle.title = 'Toggle';
 
   const numSpan = document.createElement('span');
@@ -1551,10 +1571,9 @@ function buildChoiceCard(sceneId, index) {
   header.appendChild(downBtn);
   header.appendChild(delBtn);
 
-  // Body (collapsible)
+  // Body (collapsible — expanded by default)
   const body = document.createElement('div');
   body.className = 'ed-choice-card__body';
-  body.style.display = 'none';
 
   toggle.addEventListener('click', () => {
     const isOpen = body.style.display !== 'none';
@@ -1600,22 +1619,34 @@ function buildChoiceCard(sceneId, index) {
   nextSelect.value = choice.next ?? '';
   nextSelect.addEventListener('change', () => {
     choice.next = nextSelect.value || undefined;
+    goBtn.disabled = !nextSelect.value;
     scheduleValidation();
   });
-  addField('Next scene', nextSelect);
 
-  // Requires item (single)
-  const riInput = makeInput('text', choice.requires_item ?? '', 'Item name');
-  riInput.addEventListener('input', () => {
-    choice.requires_item = riInput.value || undefined;
-    scheduleValidation();
+  const goBtn = document.createElement('button');
+  goBtn.className = 'btn btn--ghost btn--small ed-choice-goto';
+  goBtn.textContent = '→';
+  goBtn.title = 'Go to scene';
+  goBtn.disabled = !choice.next;
+  goBtn.addEventListener('click', () => {
+    if (nextSelect.value) selectScene(nextSelect.value);
   });
-  addField('Requires item', riInput);
 
-  // Requires items (all)
+  const nextWrap = document.createElement('div');
+  nextWrap.className = 'ed-choice-next-wrap';
+  nextWrap.appendChild(nextSelect);
+  nextWrap.appendChild(goBtn);
+  addField('Next scene', nextWrap);
+
+  // Requires items — merge requires_item (single) and requires_items (array) into one pill list
   const risCtr = document.createElement('div');
   risCtr.className = 'ed-pill-container';
-  makePillInput(risCtr, choice.requires_items ?? [], (items) => {
+  const risSeed = [
+    ...(choice.requires_item ? [choice.requires_item] : []),
+    ...(choice.requires_items ?? []),
+  ];
+  makePillInput(risCtr, risSeed, (items) => {
+    delete choice.requires_item;
     choice.requires_items = items.length ? items : undefined;
     scheduleValidation();
   });
@@ -1777,6 +1808,34 @@ function buildItemRow(itemName, itemData, usedItems) {
     campaign.items[currentName].description = descInput.value;
   });
 
+  // Icon dropdown (select from assets.images)
+  const imageKeys = Object.keys(campaign.assets?.images ?? {});
+  let iconSelect = null;
+  if (imageKeys.length > 0) {
+    iconSelect = document.createElement('select');
+    iconSelect.className = 'ed-select ed-select--small ed-item-row__icon';
+    iconSelect.title = 'Item icon (from assets.images)';
+    const noneOpt = document.createElement('option');
+    noneOpt.value = '';
+    noneOpt.textContent = '(no icon)';
+    iconSelect.appendChild(noneOpt);
+    for (const key of imageKeys) {
+      const opt = document.createElement('option');
+      opt.value = key;
+      opt.textContent = key;
+      iconSelect.appendChild(opt);
+    }
+    iconSelect.value = itemData?.icon ?? '';
+    iconSelect.addEventListener('change', () => {
+      if (!campaign.items[currentName] || typeof campaign.items[currentName] !== 'object') {
+        campaign.items[currentName] = { description: descInput.value, affect_attributes: {} };
+      }
+      campaign.items[currentName].icon = iconSelect.value || null;
+      markDirty();
+      scheduleValidation();
+    });
+  }
+
   const delBtn = document.createElement('button');
   delBtn.className = 'ed-item-row__delete';
   delBtn.textContent = '✕';
@@ -1789,6 +1848,7 @@ function buildItemRow(itemName, itemData, usedItems) {
 
   row.appendChild(nameInput);
   row.appendChild(descInput);
+  if (iconSelect) row.appendChild(iconSelect);
 
   if (!usedItems.has(itemName)) {
     const warn = document.createElement('span');
@@ -1802,7 +1862,7 @@ function buildItemRow(itemName, itemData, usedItems) {
   entry.appendChild(row);
 
   // Affect attributes section — only show entries already set + inline "add" button in main row
-  const attrDefs = campaign.metadata?.attributes ?? {};
+  const attrDefs = campaign.attributes ?? campaign.metadata?.attributes ?? {};
   const attrDefNames = Object.keys(attrDefs);
   if (attrDefNames.length > 0) {
     const aaSection = document.createElement('div');
@@ -2202,7 +2262,7 @@ function sfxRefIncludes(gives_sfx, key) {
 
 function renderAttributesEditor() {
   edMetaAttrsList.innerHTML = '';
-  const attrs = campaign.metadata?.attributes ?? {};
+  const attrs = campaign.attributes ?? campaign.metadata?.attributes ?? {};
   for (const [attrName, attrDef] of Object.entries(attrs)) {
     edMetaAttrsList.appendChild(buildAttributeCard(attrName, attrDef));
   }
@@ -2222,10 +2282,10 @@ function buildAttributeCard(attrName, attrDef) {
   nameInput.addEventListener('change', () => {
     const newName = nameInput.value.trim();
     if (!newName || newName === currentName) return;
-    if (campaign.metadata.attributes[newName]) { nameInput.value = currentName; return; }
-    const def = campaign.metadata.attributes[currentName];
-    delete campaign.metadata.attributes[currentName];
-    campaign.metadata.attributes[newName] = def;
+    if (campaign.attributes[newName]) { nameInput.value = currentName; return; }
+    const def = campaign.attributes[currentName];
+    delete campaign.attributes[currentName];
+    campaign.attributes[newName] = def;
     currentName = newName;
     scheduleValidation();
     markDirty();
@@ -2236,7 +2296,7 @@ function buildAttributeCard(attrName, attrDef) {
   delBtn.textContent = '✕';
   delBtn.title = 'Delete attribute';
   delBtn.addEventListener('click', () => {
-    delete campaign.metadata.attributes[currentName];
+    delete campaign.attributes[currentName];
     renderAttributesEditor();
     scheduleValidation();
     markDirty();
@@ -2284,7 +2344,7 @@ function buildAttributeCard(attrName, attrDef) {
   minCheck.type = 'checkbox';
   minCheck.checked = hasMin;
   minToggleLabel.appendChild(minCheck);
-  minToggleLabel.appendChild(document.createTextNode('Min (death trigger)'));
+  minToggleLabel.appendChild(document.createTextNode('Min'));
   const minInput = makeInput('number', hasMin ? String(Number(attrDef.min)) : '', '0');
   minInput.className += ' ed-input--narrow';
   if (!hasMin) minInput.classList.add('hidden');
@@ -2295,26 +2355,41 @@ function buildAttributeCard(attrName, attrDef) {
   // Death message (hidden until min is enabled)
   const minMsgWrap = document.createElement('div');
   if (!hasMin) minMsgWrap.classList.add('hidden');
-  const minMsgInput = makeInput('text', attrDef.min_message ?? '', 'Message shown on death');
+  const minMsgInput = makeInput('text', attrDef.min_message ?? '', 'Message shown at min');
   minMsgInput.addEventListener('input', () => {
     attrDef.min_message = minMsgInput.value || undefined;
     markDirty();
   });
   minMsgWrap.appendChild(minMsgInput);
-  addAttrField('Death message', minMsgWrap);
+  addAttrField('Min message', minMsgWrap);
+
+  // Min scene (hidden until min is enabled)
+  const minSceneWrap = document.createElement('div');
+  if (!hasMin) minSceneWrap.classList.add('hidden');
+  const minSceneInput = makeInput('text', attrDef.min_scene ?? '', 'Scene ID to go to at min');
+  minSceneInput.addEventListener('input', () => {
+    attrDef.min_scene = minSceneInput.value || undefined;
+    markDirty();
+    scheduleValidation();
+  });
+  minSceneWrap.appendChild(minSceneInput);
+  addAttrField('Min scene', minSceneWrap);
 
   minCheck.addEventListener('change', () => {
     const en = minCheck.checked;
     minInput.classList.toggle('hidden', !en);
     minMsgWrap.classList.toggle('hidden', !en);
+    minSceneWrap.classList.toggle('hidden', !en);
     if (en) {
       attrDef.min = Number(minInput.value) || 0;
       if (!minInput.value) minInput.value = '0';
     } else {
       delete attrDef.min;
       delete attrDef.min_message;
+      delete attrDef.min_scene;
       minInput.value = '';
       minMsgInput.value = '';
+      minSceneInput.value = '';
     }
     markDirty();
     scheduleValidation();
@@ -2334,7 +2409,7 @@ function buildAttributeCard(attrName, attrDef) {
   maxCheck.type = 'checkbox';
   maxCheck.checked = hasMax;
   maxToggleLabel.appendChild(maxCheck);
-  maxToggleLabel.appendChild(document.createTextNode('Max (clamp)'));
+  maxToggleLabel.appendChild(document.createTextNode('Max'));
   const maxInput = makeInput('number', hasMax ? String(Number(attrDef.max)) : '', '100');
   maxInput.className += ' ed-input--narrow';
   if (!hasMax) maxInput.classList.add('hidden');
@@ -2342,15 +2417,30 @@ function buildAttributeCard(attrName, attrDef) {
   maxToggleRow.appendChild(maxInput);
   addAttrField('Max', maxToggleRow);
 
+  // Max scene (hidden until max is enabled)
+  const maxSceneWrap = document.createElement('div');
+  if (!hasMax) maxSceneWrap.classList.add('hidden');
+  const maxSceneInput = makeInput('text', attrDef.max_scene ?? '', 'Scene ID to go to at max');
+  maxSceneInput.addEventListener('input', () => {
+    attrDef.max_scene = maxSceneInput.value || undefined;
+    markDirty();
+    scheduleValidation();
+  });
+  maxSceneWrap.appendChild(maxSceneInput);
+  addAttrField('Max scene', maxSceneWrap);
+
   maxCheck.addEventListener('change', () => {
     const en = maxCheck.checked;
     maxInput.classList.toggle('hidden', !en);
+    maxSceneWrap.classList.toggle('hidden', !en);
     if (en) {
       attrDef.max = Number(maxInput.value) || 100;
       if (!maxInput.value) maxInput.value = String(attrDef.max);
     } else {
       delete attrDef.max;
+      delete attrDef.max_scene;
       maxInput.value = '';
+      maxSceneInput.value = '';
     }
     markDirty();
     scheduleValidation();
@@ -2366,14 +2456,14 @@ function buildAttributeCard(attrName, attrDef) {
 
 /**
  * Render an affect_attributes editor into container.
- * Shows one signed number input per attribute defined in campaign.metadata.attributes.
+ * Shows one signed number input per attribute defined in campaign.attributes.
  * @param {HTMLElement} container
  * @param {object|undefined} currentAttrs  — current affect_attributes dict (may be sparse)
  * @param {function(object|undefined): void} onChange
  */
 function makeAffectAttributesEditor(container, currentAttrs, onChange) {
   container.innerHTML = '';
-  const attrDefs = campaign.metadata?.attributes ?? {};
+  const attrDefs = campaign.attributes ?? campaign.metadata?.attributes ?? {};
   const attrNames = Object.keys(attrDefs);
 
   if (attrNames.length === 0) {
@@ -2383,6 +2473,28 @@ function makeAffectAttributesEditor(container, currentAttrs, onChange) {
     container.appendChild(hint);
     return;
   }
+
+  // Determine if any attribute has a non-zero value (start expanded if so)
+  const hasValues = currentAttrs && Object.values(currentAttrs).some((v) => Number(v) !== 0);
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'ed-collapsible';
+
+  const toggle = document.createElement('button');
+  toggle.className = 'ed-collapsible__toggle';
+  toggle.type = 'button';
+  toggle.textContent = hasValues ? '− Affect Attributes' : '+ Affect Attributes';
+  wrapper.appendChild(toggle);
+
+  const body = document.createElement('div');
+  body.className = 'ed-collapsible__body';
+  body.style.display = hasValues ? '' : 'none';
+
+  toggle.addEventListener('click', () => {
+    const isOpen = body.style.display !== 'none';
+    body.style.display = isOpen ? 'none' : '';
+    toggle.textContent = isOpen ? '+ Affect Attributes' : '− Affect Attributes';
+  });
 
   const current = { ...(currentAttrs ?? {}) };
   const grid = document.createElement('div');
@@ -2413,7 +2525,9 @@ function makeAffectAttributesEditor(container, currentAttrs, onChange) {
     grid.appendChild(input);
   }
 
-  container.appendChild(grid);
+  body.appendChild(grid);
+  wrapper.appendChild(body);
+  container.appendChild(wrapper);
 }
 
 // ─── Validation panel ─────────────────────────────────────────────────────────

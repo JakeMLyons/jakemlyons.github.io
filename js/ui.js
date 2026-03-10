@@ -64,8 +64,16 @@ const sceneMessages   = document.getElementById('scene-messages');
 const sceneText       = document.getElementById('scene-text');
 const sceneChoices    = document.getElementById('scene-choices');
 
+const inventoryToggle = document.getElementById('inventory-toggle');
+const inventoryArrow  = document.getElementById('inventory-arrow');
+const inventoryContent = document.getElementById('inventory-content');
 const inventoryList   = document.getElementById('inventory-list');
-const hudAttributes   = document.getElementById('hud-attributes');
+const invExpandAll    = document.getElementById('inv-expand-all');
+const invCollapseAll  = document.getElementById('inv-collapse-all');
+const hudAttributesContainer = document.getElementById('hud-attributes-container');
+const attributesToggle  = document.getElementById('attributes-toggle');
+const attributesArrow   = document.getElementById('attributes-arrow');
+const attributesContent = document.getElementById('hud-attributes');
 
 const journalToggle   = document.getElementById('journal-toggle');
 const journalArrow    = document.getElementById('journal-arrow');
@@ -83,6 +91,8 @@ const historyArrow    = document.getElementById('history-arrow');
 const historyContent  = document.getElementById('history-content');
 const mapBadge        = document.getElementById('map-badge');
 const mapList         = document.getElementById('map-list');
+const histExpandAll   = document.getElementById('hist-expand-all');
+const histCollapseAll = document.getElementById('hist-collapse-all');
 
 const sceneImage      = document.getElementById('scene-image');
 const sceneMusic      = document.getElementById('scene-music');
@@ -99,6 +109,7 @@ document.addEventListener('DOMContentLoaded', () => {
   wireButtons();
   wireCollapsibles();
   wireMedia();
+  wireResizer();
   checkDashboardHandoff();
 });
 
@@ -177,6 +188,8 @@ function startNewGame() {
   currentMusicUrl = null;
 
   // Reset collapsibles
+  expandSection('inventory', true);
+  expandSection('attributes', true);
   collapseSection('journal', true);
   collapseSection('map', true);
   collapseSection('history', true);
@@ -471,6 +484,17 @@ function renderInventory(state) {
     const hasDescription = itemEntry != null;
     const itemDesc = typeof itemEntry === 'string' ? itemEntry : (itemEntry?.description ?? '');
 
+    // Item icon
+    const iconKey = itemEntry?.icon;
+    const iconUrl = iconKey ? campaign.assets?.images?.[iconKey] : null;
+    if (iconUrl) {
+      const img = document.createElement('img');
+      img.src = iconUrl;
+      img.className = 'inventory-item__icon';
+      img.alt = '';
+      li.appendChild(img);
+    }
+
     if (hasDescription) {
       const btn = document.createElement('button');
       btn.className = 'inventory-item--clickable';
@@ -478,11 +502,12 @@ function renderInventory(state) {
 
       const descDiv = document.createElement('div');
       descDiv.className = 'item-description';
+      descDiv.dataset.text = itemDesc || 'No further description.';
 
       btn.addEventListener('click', () => {
         descDiv.classList.toggle('item-description--visible');
         if (descDiv.classList.contains('item-description--visible') && !descDiv.textContent) {
-          descDiv.textContent = itemDesc || 'No further description.';
+          descDiv.textContent = descDiv.dataset.text;
         }
       });
 
@@ -500,16 +525,16 @@ function renderInventory(state) {
 }
 
 function renderAttributes(state) {
-  const attrDefs = campaign?.metadata?.attributes ?? {};
+  const attrDefs = campaign?.attributes ?? campaign?.metadata?.attributes ?? {};
   const attrEntries = Object.entries(attrDefs);
 
   if (attrEntries.length === 0) {
-    hudAttributes.classList.add('hidden');
+    hudAttributesContainer.classList.add('hidden');
     return;
   }
 
-  hudAttributes.classList.remove('hidden');
-  hudAttributes.innerHTML = '';
+  hudAttributesContainer.classList.remove('hidden');
+  attributesContent.innerHTML = '';
 
   for (const [attrName, def] of attrEntries) {
     const val = state.attributes?.[attrName] ?? 0;
@@ -537,7 +562,7 @@ function renderAttributes(state) {
       section.classList.add(cls);
     }
 
-    hudAttributes.appendChild(section);
+    attributesContent.appendChild(section);
   }
 
   lastRenderedAttributes = { ...state.attributes };
@@ -583,7 +608,6 @@ function renderMap(state) {
 
     const li = document.createElement('li');
     li.className = 'map-entry' + (isCurrent ? ' map-entry--current' : '');
-    if (scene?.text) li.title = scene.text;
 
     if (isCurrent) {
       const marker = document.createElement('span');
@@ -592,9 +616,29 @@ function renderMap(state) {
       li.appendChild(marker);
     }
 
-    const nameSpan = document.createElement('span');
-    nameSpan.textContent = label;
-    li.appendChild(nameSpan);
+    if (scene?.text) {
+      const btn = document.createElement('button');
+      btn.className = 'map-entry__label';
+      btn.textContent = label;
+
+      const detail = document.createElement('div');
+      detail.className = 'map-entry__detail';
+      detail.dataset.text = scene.text;
+
+      btn.addEventListener('click', () => {
+        detail.classList.toggle('map-entry__detail--visible');
+        if (detail.classList.contains('map-entry__detail--visible') && !detail.textContent) {
+          detail.textContent = detail.dataset.text;
+        }
+      });
+
+      li.appendChild(btn);
+      li.appendChild(detail);
+    } else {
+      const nameSpan = document.createElement('span');
+      nameSpan.textContent = label;
+      li.appendChild(nameSpan);
+    }
 
     mapList.appendChild(li);
   }
@@ -747,13 +791,17 @@ function renderGraph(state) {
 // ─── Collapsible sections ─────────────────────────────────────────────────────
 
 function getSectionRefs(name) {
-  if (name === 'journal') return { content: journalContent, arrow: journalArrow, toggle: journalToggle };
-  if (name === 'map')     return { content: mapContent,     arrow: mapArrow,     toggle: mapToggle };
-  if (name === 'history') return { content: historyContent, arrow: historyArrow, toggle: historyToggle };
+  if (name === 'inventory')  return { content: inventoryContent,  arrow: inventoryArrow,  toggle: inventoryToggle };
+  if (name === 'attributes') return { content: attributesContent, arrow: attributesArrow, toggle: attributesToggle };
+  if (name === 'journal')    return { content: journalContent,    arrow: journalArrow,    toggle: journalToggle };
+  if (name === 'map')        return { content: mapContent,        arrow: mapArrow,        toggle: mapToggle };
+  if (name === 'history')    return { content: historyContent,    arrow: historyArrow,    toggle: historyToggle };
   throw new Error(`Unknown section: ${name}`);
 }
 
 function wireCollapsibles() {
+  inventoryToggle.addEventListener('click', () => toggleSection('inventory'));
+  attributesToggle.addEventListener('click', () => toggleSection('attributes'));
   journalToggle.addEventListener('click', () => toggleSection('journal'));
   mapToggle.addEventListener('click', () => {
     toggleSection('map');
@@ -812,6 +860,30 @@ function wireButtons() {
   });
   helpBtn.addEventListener('click', () => {
     helpPanel.classList.toggle('help-panel--visible');
+  });
+
+  invExpandAll.addEventListener('click', () => {
+    for (const d of inventoryList.querySelectorAll('.item-description')) {
+      if (!d.textContent) d.textContent = d.dataset.text ?? '';
+      d.classList.add('item-description--visible');
+    }
+  });
+  invCollapseAll.addEventListener('click', () => {
+    for (const d of inventoryList.querySelectorAll('.item-description')) {
+      d.classList.remove('item-description--visible');
+    }
+  });
+
+  histExpandAll.addEventListener('click', () => {
+    for (const d of mapList.querySelectorAll('.map-entry__detail')) {
+      if (!d.textContent) d.textContent = d.dataset.text ?? '';
+      d.classList.add('map-entry__detail--visible');
+    }
+  });
+  histCollapseAll.addEventListener('click', () => {
+    for (const d of mapList.querySelectorAll('.map-entry__detail')) {
+      d.classList.remove('map-entry__detail--visible');
+    }
   });
 }
 
@@ -1027,6 +1099,43 @@ function handleRestartConfirm() {
 function doRestart() {
   journalAutoExpanded = false;
   renderOutput(engine.start());
+}
+
+// ─── HUD resizer ─────────────────────────────────────────────────────────
+
+function wireResizer() {
+  const resizer = document.getElementById('hud-resizer');
+  const hudPanel = document.querySelector('.hud-panel');
+  if (!resizer || !hudPanel) return;
+
+  // Restore saved width
+  const saved = localStorage.getItem('play_hud_width');
+  if (saved) hudPanel.style.width = `${saved}px`;
+
+  resizer.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    resizer.classList.add('hud-resizer--dragging');
+    document.body.style.userSelect = 'none';
+    const startX = e.clientX;
+    const startWidth = hudPanel.getBoundingClientRect().width;
+
+    function onMove(e) {
+      const newWidth = Math.max(120, Math.min(400, startWidth + e.clientX - startX));
+      hudPanel.style.width = `${newWidth}px`;
+    }
+
+    function onUp() {
+      resizer.classList.remove('hud-resizer--dragging');
+      document.body.style.userSelect = '';
+      const finalWidth = Math.round(hudPanel.getBoundingClientRect().width);
+      try { localStorage.setItem('play_hud_width', String(finalWidth)); } catch { /* silent */ }
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    }
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
 }
 
 // ─── Theme injection ──────────────────────────────────────────────────────────

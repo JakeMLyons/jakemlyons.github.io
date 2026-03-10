@@ -29,20 +29,24 @@ In campaigns that track attributes like health, certain choices or locations can
 
 ### The HUD sidebar
 
+The sidebar is resizable — drag its right edge to adjust the width (persisted across sessions).
+
 | Panel      | What it shows                                                                           |
 | ---------- | --------------------------------------------------------------------------------------- |
-| Inventory  | Items you're currently carrying. Click an item to read its description.                 |
+| Inventory  | Items you're currently carrying. Click an item to read its description. Items may show an icon if the campaign provides one. |
 | Attributes | Stats tracked by the campaign (e.g. Health, Carry Weight). Hidden if none are defined.  |
 | Journal    | Notes and discoveries accumulated during your playthrough.                              |
-| Map        | A list of scenes you have visited, in order.                                            |
+| History    | Scenes you have visited, in order. Click any entry to reveal its full text.             |
+| Map        | A graph view of explored scenes and their connections.                                  |
 
 ### Toolbar actions
 
-| Button                | What it does                                                    |
-| --------------------- | --------------------------------------------------------------- |
-| **Look**        | Redisplay the current scene text                                |
-| **Save / Load** | Open the save panel to save, restore, download, or upload saves |
+| Button          | What it does                                                    |
+| --------------- | --------------------------------------------------------------- |
+| **Save**        | Save your current position                                      |
+| **Load**        | Open the load panel to restore, download, or upload saves       |
 | **Restart**     | Restart the campaign from the beginning                         |
+| **Mute**        | Toggle music and sound effects                                  |
 | **Help**        | Show in-game help                                               |
 
 ---
@@ -76,7 +80,7 @@ The dashboard (`dashboard.html`) is the main hub for browsing and launching camp
 
 - The five bundled campaigns load automatically when the dashboard opens.
 - Add your own campaigns by dragging folders or ZIPs onto the library panel.
-- Click a campaign card to see its metadata, scene list, and validation status.
+- Click a campaign card to see its metadata, scene list, and validation status. Cards show feature badges (attributes, items, recipes, assets, journal) for a quick overview.
 - Click **Launch** to open a campaign in the game player.
 - Click **Edit** to open a campaign in the campaign editor.
 
@@ -93,6 +97,8 @@ Open **editor.html** to create or edit campaigns. Two modes are available, switc
 **Visual mode** — Edit metadata, attributes, scenes, item descriptions, and assets using forms. No YAML knowledge required. The sidebar has sections — **Metadata**, **Attributes**, **Items**, **Assets**, and **Scenes** — each opening the relevant form. Clicking **Scenes** shows a flow diagram of how all scenes connect; click any node to open that scene's editor.
 
 Both modes work on the same in-memory campaign. Switching modes converts the data between representations automatically.
+
+In Visual mode, choices are expanded by default with **Expand All** / **Collapse All** buttons for quick navigation. Each choice has a **→** button next to the "Next scene" dropdown that jumps directly to the target scene. The `affect_attributes` section on choices and `on_enter` blocks is collapsible to reduce clutter.
 
 A **Validation** panel (toggled from the toolbar) shows errors and warnings in real time: missing scene references, unreachable scenes, reserved name collisions, and more.
 
@@ -171,6 +177,17 @@ items:
   rusty key: "A small iron key, orange with age."
 ```
 
+Items can also use the extended format with an icon (from `assets.images`) and attribute effects:
+
+```yaml
+items:
+  lantern:
+    description: "A tin lantern with a cracked glass panel."
+    icon: "lantern_icon"          # optional — shown in inventory
+    affect_attributes:
+      carry_weight: 3
+```
+
 **Key rules:**
 
 - `metadata.yaml` is required and contains only metadata — no scenes.
@@ -240,28 +257,3 @@ Set a value to `none` to explicitly clear the image or silence the music on a sc
 
 `gives_sfx` accepts a single key string or a list of keys (all play simultaneously). Assets are entirely optional — omitting the `assets` block on a scene clears any image and stops any music.
 
----
-
-## The Web Component
-
-You can embed any campaign on your own web page using the `<text-adventure>` custom element:
-
-```html
-<script src="vendor/js-yaml.min.js"></script>
-<script src="vendor/jszip.min.js"></script>
-<script type="module" src="js/widget.js"></script>
-
-<text-adventure src="https://example.com/MyAdventure.zip"></text-adventure>
-```
-
-The component runs in a shadow DOM, isolated from the host page's styles. Saves are scoped per `src` URL so multiple instances on the same page don't conflict.
-
-Appearance is controlled via CSS custom properties:
-
-```css
-text-adventure {
-    --ta-bg:     #1a1a2e;
-    --ta-text:   #e0e0e0;
-    --ta-accent: #c8a96e;
-}
-```

@@ -70,16 +70,30 @@
       <!-- Campaign title -->
       <div class="hud-title" id="game-title">Text Adventure</div>
 
-      <!-- Inventory -->
-      <div class="hud-section" id="hud-inventory">
-        <div class="hud-section__label">Inventory</div>
-        <div class="hud-section__value">
+      <!-- Inventory (collapsible, starts expanded) -->
+      <div class="hud-collapsible" id="hud-inventory-container">
+        <button class="hud-collapsible__header" id="inventory-toggle" aria-expanded="true">
+          <span class="hud-collapsible__title">Inventory</span>
+          <span class="hud-collapsible__arrow" id="inventory-arrow">▲</span>
+        </button>
+        <div class="hud-collapsible__content hud-collapsible__content--expanded" id="inventory-content">
+          <div class="hud-list-controls">
+            <button class="hud-ctrl-btn" id="inv-expand-all" title="Expand all items">expand all</button>
+            <button class="hud-ctrl-btn" id="inv-collapse-all" title="Collapse all items">collapse all</button>
+          </div>
           <ul class="inventory-list" id="inventory-list"></ul>
         </div>
       </div>
 
-      <!-- Attributes (rendered dynamically by ui.js) -->
-      <div id="hud-attributes" class="hidden"></div>
+      <!-- Attributes (collapsible, rendered dynamically by ui.js) -->
+      <div class="hud-collapsible hidden" id="hud-attributes-container">
+        <button class="hud-collapsible__header" id="attributes-toggle" aria-expanded="true">
+          <span class="hud-collapsible__title">Attributes</span>
+          <span class="hud-collapsible__arrow" id="attributes-arrow">▲</span>
+        </button>
+        <div class="hud-collapsible__content hud-collapsible__content--expanded" id="hud-attributes">
+        </div>
+      </div>
 
       <!-- Journal (collapsible) -->
       <div class="hud-collapsible" id="hud-journal-container">
@@ -116,11 +130,18 @@
           <span class="hud-collapsible__arrow" id="history-arrow">▼</span>
         </button>
         <div class="hud-collapsible__content" id="history-content">
+          <div class="hud-list-controls">
+            <button class="hud-ctrl-btn" id="hist-expand-all">expand all</button>
+            <button class="hud-ctrl-btn" id="hist-collapse-all">collapse all</button>
+          </div>
           <ul class="map-list" id="map-list"></ul>
         </div>
       </div>
 
     </aside>
+
+    <!-- HUD resizer (drag to resize) -->
+    <div class="hud-resizer" id="hud-resizer"></div>
 
     <!-- Scene panel -->
     <main class="scene-panel" id="scene-panel">

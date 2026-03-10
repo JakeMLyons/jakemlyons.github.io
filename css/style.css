@@ -461,11 +461,25 @@ body {
 .hud-panel {
   width: var(--ta-hud-width);
   flex-shrink: 0;
-  border-right: 1px solid var(--ta-border);
   background-color: var(--ta-surface);
-  overflow-y: auto;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+/* HUD resizer handle (play screen) */
+.hud-resizer {
+  width: 6px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background-color: var(--ta-border);
+  transition: background-color 150ms;
+  z-index: 1;
+}
+
+.hud-resizer:hover,
+.hud-resizer--dragging {
+  background-color: var(--ta-accent);
 }
 
 .hud-section {
@@ -480,6 +494,39 @@ body {
   text-transform: uppercase;
   color: var(--ta-text-muted);
   margin-bottom: 0.4em;
+}
+
+.hud-section__controls {
+  display: flex;
+  gap: 0.25em;
+  margin-bottom: 0.4em;
+}
+
+.hud-ctrl-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--ta-font-ui);
+  font-size: 0.68rem;
+  font-weight: normal;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--ta-text-muted);
+  padding: 0.1em 0.25em;
+  border-radius: var(--ta-radius);
+  line-height: 1;
+}
+
+.hud-ctrl-btn:hover {
+  color: var(--ta-accent);
+  background-color: var(--ta-surface-raised);
+}
+
+.hud-list-controls {
+  display: flex;
+  gap: 0.25em;
+  padding-top: 0.4em;
+  padding-bottom: 0.2em;
 }
 
 .hud-section__value {
@@ -499,6 +546,15 @@ body {
 .inventory-item {
   font-size: 0.85rem;
   color: var(--ta-text);
+}
+
+.inventory-item__icon {
+  width: 18px;
+  height: 18px;
+  vertical-align: middle;
+  margin-right: 0.2em;
+  border-radius: 2px;
+  object-fit: contain;
 }
 
 .inventory-item--clickable {
@@ -682,6 +738,21 @@ body {
   }
 }
 
+/* History fills remaining HUD space and scrolls internally */
+#hud-history-container {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#history-content.hud-collapsible__content--expanded {
+  flex: 1;
+  overflow-y: auto;
+  max-height: none;
+}
+
 /* Journal entries */
 .journal-list {
   list-style: none;
@@ -726,6 +797,7 @@ body {
   color: var(--ta-text-muted);
   display: flex;
   align-items: baseline;
+  flex-wrap: wrap;
   gap: 0.4em;
 }
 
@@ -737,6 +809,38 @@ body {
 .map-entry__marker {
   flex-shrink: 0;
   font-size: 0.7rem;
+}
+
+.map-entry__label {
+  color: var(--ta-accent);
+  cursor: pointer;
+  text-decoration: underline dotted;
+  background: none;
+  border: none;
+  font-family: var(--ta-font-ui);
+  font-size: 0.82rem;
+  padding: 0;
+  text-align: left;
+}
+
+.map-entry__label:hover {
+  color: var(--ta-accent-hover);
+}
+
+.map-entry__detail {
+  flex-basis: 100%;
+  margin-top: 0.1em;
+  font-size: 0.78rem;
+  color: var(--ta-text-muted);
+  font-style: italic;
+  padding: 0.35em 0.5em;
+  border-left: 2px solid var(--ta-border);
+  display: none;
+  white-space: pre-wrap;
+}
+
+.map-entry__detail--visible {
+  display: block;
 }
 
 /* ── Scene graph ──────────────────────────────────────────────────────────── */
@@ -995,6 +1099,10 @@ body {
     width: 100%;
     border-right: none;
     border-bottom: 1px solid var(--ta-border);
+  }
+
+  .hud-resizer {
+    display: none;
   }
 
   .game-content {
