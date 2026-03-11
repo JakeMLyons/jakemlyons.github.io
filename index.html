@@ -8,7 +8,7 @@
   <script>
     // Redirect to dashboard if this page is opened without a campaign handoff.
     // Runs before modules load so it works even if a module import fails.
-    if (!location.search.includes('handoff')) {
+    if (!location.search.includes('handoff') && !location.search.includes('src=')) {
       try {
         if (!localStorage.getItem('adventure_pending_campaign')) {
           location.replace('dashboard.html');

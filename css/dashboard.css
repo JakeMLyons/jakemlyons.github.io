@@ -1,4 +1,4 @@
-/* dashboard.css — Dashboard-specific styles for dashboard.html */
+/* dashboard.css — Platform dashboard styles (tab-based layout) */
 
 body {
   height: 100%;
@@ -8,7 +8,10 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  background-color: var(--ta-bg);
 }
+
+/* ── Header ────────────────────────────────────────────────────────────────── */
 
 .dash-header {
   display: flex;
@@ -28,339 +31,613 @@ body {
   flex: 1;
 }
 
-.dash-header__subtitle {
-  font-size: 0.8rem;
-  color: var(--ta-text-muted);
-}
-
-.dash-body {
-  display: flex;
-  flex: 1;
-  overflow: hidden;
-  min-height: 0;
-}
-
-/* ── Library panel ── */
-.dash-library {
-  width: 320px;
-  flex-shrink: 0;
-  border-right: 1px solid var(--ta-border);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.dash-library__header {
+.dash-header__actions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0.75rem 1rem;
-  border-bottom: 1px solid var(--ta-border);
+  gap: 0.5rem;
 }
 
-.dash-library__title {
-  font-size: 0.75rem;
+/* Auth area */
+.dash-auth {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.dash-auth__username {
+  font-size: 0.82rem;
+  color: var(--ta-text-muted);
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Tab bar ────────────────────────────────────────────────────────────────── */
+
+.dash-tabs {
+  display: flex;
+  gap: 0;
+  padding: 0 1.5rem;
+  background-color: var(--ta-surface);
+  border-bottom: 1px solid var(--ta-border);
+  flex-shrink: 0;
+}
+
+.dash-tab {
+  padding: 0.6rem 1rem;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  font-size: 0.875rem;
+  color: var(--ta-text-muted);
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+  white-space: nowrap;
+}
+
+.dash-tab:hover {
+  color: var(--ta-text);
+}
+
+.dash-tab--active {
+  color: var(--ta-accent);
+  border-bottom-color: var(--ta-accent);
+  font-weight: 500;
+}
+
+/* ── Tab panels ─────────────────────────────────────────────────────────────── */
+
+.dash-panel {
+  padding: 1.25rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.dash-panel__toolbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.dash-panel__heading {
+  font-size: 0.85rem;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   text-transform: uppercase;
   color: var(--ta-text-muted);
 }
 
-.dash-library__scroll {
-  flex: 1;
-  overflow-y: auto;
-  padding: 0.5rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
+/* ── Campaign grid ──────────────────────────────────────────────────────────── */
+
+.campaign-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+  align-content: start;
 }
 
-/* Load sub-panel (shown when + Load is clicked) */
-.load-subpanel {
-  border-bottom: 1px solid var(--ta-border);
-  padding: 1rem;
-  background-color: var(--ta-surface-raised);
-  display: none;
-}
-
-.load-subpanel--visible {
-  display: block;
-}
-
-.load-subpanel__drop {
-  border: 2px dashed var(--ta-border);
-  border-radius: var(--ta-radius);
-  padding: 1rem;
-  text-align: center;
-}
-
-.load-subpanel__drop--dragover {
-  border-color: var(--ta-accent);
-}
-
-.load-subpanel__label {
-  font-size: 0.85rem;
+.dash-empty {
   color: var(--ta-text-muted);
-  margin-bottom: 0.5rem;
+  font-style: italic;
+  font-size: 0.9rem;
+  grid-column: 1 / -1;
 }
 
-.load-subpanel__actions {
-  display: flex;
-  gap: 0.5rem;
-  justify-content: center;
-  flex-wrap: wrap;
-}
+/* ── Campaign cards (community + my campaigns) ──────────────────────────────── */
 
-.load-subpanel__status {
-  margin-top: 0.5rem;
-  font-size: 0.8rem;
-  color: var(--ta-text-muted);
-  min-height: 1.2em;
-}
-
-.load-subpanel__error {
-  margin-top: 0.5rem;
-  font-size: 0.8rem;
-  color: var(--ta-danger);
-  display: none;
-}
-
-.load-subpanel__error--visible {
-  display: block;
-}
-
-/* Overflow notice */
-.overflow-notice {
-  padding: 0.5rem 1rem;
-  font-size: 0.8rem;
-  color: var(--ta-warning);
-  background-color: color-mix(in srgb, var(--ta-warning) 10%, var(--ta-surface));
-  display: none;
-}
-
-.overflow-notice--visible {
-  display: block;
-}
-
-/* Campaign card */
 .campaign-card {
   border: 1px solid var(--ta-border);
   border-radius: var(--ta-radius);
   background-color: var(--ta-surface);
-  padding: 0.6rem 0.75rem;
-  cursor: pointer;
+  padding: 0.85rem 1rem;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
-  position: relative;
+  gap: 0.35rem;
+  transition: border-color 0.12s;
 }
 
 .campaign-card:hover {
   border-color: var(--ta-accent);
 }
 
-.campaign-card--selected {
-  border-color: var(--ta-accent);
-  background-color: var(--ta-surface-raised);
+.campaign-card__title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.4rem;
 }
 
 .campaign-card__title {
-  font-size: 0.9rem;
+  font-size: 0.95rem;
   font-weight: 500;
   color: var(--ta-text);
-  padding-right: 1.5rem;
+  line-height: 1.3;
+  min-width: 0;
+}
+
+.campaign-card__description {
+  font-size: 0.82rem;
+  color: var(--ta-text-muted);
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.campaign-card__author {
+  font-size: 0.78rem;
+  color: var(--ta-text-muted);
 }
 
 .campaign-card__meta {
   font-size: 0.78rem;
   color: var(--ta-text-muted);
   display: flex;
-  gap: 0.5rem;
+  gap: 0.4rem;
   flex-wrap: wrap;
   align-items: center;
+  margin-top: 0.1rem;
 }
+
+.campaign-card__actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-top: 0.35rem;
+}
+
+/* ── Campaign card badges ────────────────────────────────────────────────────── */
 
 .campaign-card__badge {
   font-size: 0.7rem;
-  padding: 0.1em 0.4em;
+  padding: 0.1em 0.45em;
   border-radius: 999px;
   background-color: var(--ta-surface-raised);
   color: var(--ta-text-muted);
   border: 1px solid var(--ta-border);
+  white-space: nowrap;
 }
 
-.campaign-card__badge--valid {
-  background-color: color-mix(in srgb, var(--ta-success) 15%, var(--ta-surface));
-  color: var(--ta-success);
-  border-color: var(--ta-success);
+.campaign-card__badge--feature {
+  background-color: color-mix(in srgb, var(--ta-accent) 12%, var(--ta-surface));
+  color: var(--ta-accent);
+  border-color: color-mix(in srgb, var(--ta-accent) 35%, transparent);
 }
 
-.campaign-card__badge--error {
-  background-color: color-mix(in srgb, var(--ta-danger) 15%, var(--ta-surface));
+.campaign-card__badge--nsfw {
+  background-color: color-mix(in srgb, var(--ta-danger) 12%, var(--ta-surface));
   color: var(--ta-danger);
   border-color: var(--ta-danger);
 }
 
-.campaign-card__badge--feature {
-  background-color: color-mix(in srgb, var(--ta-accent) 15%, var(--ta-surface));
-  color: var(--ta-accent);
-  border-color: color-mix(in srgb, var(--ta-accent) 40%, transparent);
+.campaign-card__badge--public {
+  background-color: color-mix(in srgb, var(--ta-success) 12%, var(--ta-surface));
+  color: var(--ta-success);
+  border-color: var(--ta-success);
+}
+
+.campaign-card__badge--private {
+  background-color: color-mix(in srgb, var(--ta-text-muted) 10%, var(--ta-surface));
+  color: var(--ta-text-muted);
+  border-color: var(--ta-border);
 }
 
 .campaign-card__badge--draft {
-  background-color: color-mix(in srgb, var(--ta-warning) 15%, var(--ta-surface));
+  background-color: color-mix(in srgb, var(--ta-warning) 12%, var(--ta-surface));
   color: var(--ta-warning);
   border-color: var(--ta-warning);
 }
 
-.campaign-card__remove {
-  position: absolute;
-  top: 0.4rem;
-  right: 0.4rem;
-  background: none;
-  border: none;
-  font-size: 0.75rem;
+/* ── Vote button ─────────────────────────────────────────────────────────────── */
+
+.btn--voted {
+  color: var(--ta-accent);
+  border-color: var(--ta-accent);
+  background-color: color-mix(in srgb, var(--ta-accent) 10%, var(--ta-surface));
+}
+
+.btn--voted:hover {
+  background-color: color-mix(in srgb, var(--ta-accent) 18%, var(--ta-surface));
+}
+
+.vote-count {
+  font-size: 0.78rem;
+  color: var(--ta-text-muted);
+  align-self: center;
+}
+
+/* ── NSFW toggle ─────────────────────────────────────────────────────────────── */
+
+.dash-nsfw-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
   color: var(--ta-text-muted);
   cursor: pointer;
-  padding: 0.1em 0.3em;
-  line-height: 1;
-  border-radius: 2px;
+  user-select: none;
 }
 
-.campaign-card__remove:hover {
-  color: var(--ta-danger);
+.dash-nsfw-toggle input {
+  cursor: pointer;
 }
 
-/* ── Detail panel ── */
-.dash-detail {
+/* ── Pagination ──────────────────────────────────────────────────────────────── */
+
+.dash-pagination {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+}
+
+/* Auth form styles are defined in style.css (shared with editor modals) */
+
+/* ── Admin reports list ──────────────────────────────────────────────────────── */
+
+.admin-report {
+  border: 1px solid var(--ta-border);
+  border-radius: var(--ta-radius);
+  background-color: var(--ta-surface);
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.admin-report__campaign {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--ta-text);
+}
+
+.admin-report__meta {
+  font-size: 0.78rem;
+  color: var(--ta-text-muted);
+}
+
+.admin-report__reason {
+  font-size: 0.82rem;
+  color: var(--ta-text-muted);
+  font-style: italic;
+}
+
+.admin-report__actions {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  margin-top: 0.25rem;
+}
+
+/* ── Toast notification ──────────────────────────────────────────────────────── */
+
+.dash-toast {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: var(--ta-surface-raised);
+  color: var(--ta-text);
+  border: 1px solid var(--ta-border);
+  border-radius: var(--ta-radius);
+  padding: 0.5rem 1.25rem;
+  font-size: 0.875rem;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.3);
+  z-index: 200;
+  transition: opacity 0.3s;
+}
+
+.dash-toast.hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ── Body layout (detail + resizer + main) ───────────────────────────────────── */
+
+.dash-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.dash-main {
   flex: 1;
   overflow-y: auto;
-  padding: 1.5rem;
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
 }
 
-.dash-detail__empty {
-  color: var(--ta-text-muted);
-  font-style: italic;
-  font-size: 0.9rem;
-}
+/* ── Detail panel ────────────────────────────────────────────────────────────── */
 
-.dash-detail__section {
+.dash-detail {
+  width: var(--dash-detail-width, 300px);
+  min-width: 200px;
+  max-width: 480px;
+  border-right: 1px solid var(--ta-border);
+  background-color: var(--ta-surface);
+  overflow-y: auto;
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
+}
+
+.dash-detail.hidden {
+  display: none;
+}
+
+.dash-resizer {
+  width: 4px;
+  cursor: col-resize;
+  flex-shrink: 0;
+  background-color: var(--ta-border);
+  transition: background-color 0.12s;
+  display: none;
+}
+
+.dash-resizer--active {
+  display: block;
+}
+
+.dash-resizer:hover,
+.dash-resizer--dragging {
+  background-color: var(--ta-accent);
+}
+
+/* ── Detail panel content ────────────────────────────────────────────────────── */
+
+.detail-header {
+  display: flex;
+  align-items: center;
   gap: 0.5rem;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--ta-border);
+  flex-shrink: 0;
 }
 
-.dash-detail__section-title {
-  font-size: 0.75rem;
+.detail-header__title {
+  flex: 1;
+  font-size: 0.72rem;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--ta-text-muted);
-  border-bottom: 1px solid var(--ta-border);
-  padding-bottom: 0.35rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.detail-grid {
-  display: grid;
-  grid-template-columns: 140px 1fr;
-  gap: 0.25rem 0.75rem;
-  font-size: 0.85rem;
+.detail-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--ta-text-muted);
+  font-size: 0.8rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: var(--ta-radius);
+  line-height: 1;
 }
 
-.detail-grid__label {
+.detail-close:hover {
+  color: var(--ta-text);
+  background-color: var(--ta-surface-raised);
+}
+
+.detail-body {
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  flex: 1;
+}
+
+.detail-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.detail-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
   color: var(--ta-text-muted);
 }
 
-.detail-grid__value {
+.detail-input {
+  font-family: inherit;
+  font-size: 0.85rem;
+  background-color: var(--ta-surface-raised);
   color: var(--ta-text);
+  border: 1px solid var(--ta-border);
+  border-radius: var(--ta-radius);
+  padding: 0.35rem 0.5rem;
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
 }
 
-.detail-tags {
+.detail-input:focus {
+  outline: none;
+  border-color: var(--ta-accent);
+}
+
+.detail-toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.detail-toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.85rem;
+  color: var(--ta-text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.detail-campaign-title {
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--ta-text);
+  line-height: 1.3;
+}
+
+.detail-description {
+  font-size: 0.85rem;
+  color: var(--ta-text-muted);
+  line-height: 1.5;
+}
+
+.detail-author {
+  font-size: 0.82rem;
+  color: var(--ta-text-muted);
+}
+
+.detail-date {
+  font-size: 0.78rem;
+  color: var(--ta-text-muted);
+}
+
+.detail-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.3rem;
-}
-
-.detail-tag {
-  font-size: 0.75rem;
-  padding: 0.15em 0.5em;
-  border-radius: 999px;
-  background-color: var(--ta-surface-raised);
-  color: var(--ta-text-muted);
-  border: 1px solid var(--ta-border);
-}
-
-/* Validation results */
-.validation-list {
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-
-.validation-item {
-  font-size: 0.82rem;
-  padding: 0.3em 0.5em;
-  border-radius: var(--ta-radius);
-  line-height: 1.4;
-}
-
-.validation-item--error {
-  background-color: color-mix(in srgb, var(--ta-danger) 12%, var(--ta-surface));
-  color: var(--ta-text);
-  border-left: 3px solid var(--ta-danger);
-}
-
-.validation-item--warning {
-  background-color: color-mix(in srgb, var(--ta-warning) 10%, var(--ta-surface));
-  color: var(--ta-text-muted);
-  border-left: 3px solid var(--ta-warning);
-}
-
-.validation-ok {
-  font-size: 0.85rem;
-  color: var(--ta-success);
-}
-
-/* Launch section */
-.launch-section {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.launch-warning {
-  font-size: 0.82rem;
-  color: var(--ta-warning);
-}
-
-/* Empty library placeholder */
-.dash-library__empty {
-  font-size: 0.82rem;
-  color: var(--ta-text-muted);
-  font-style: italic;
-  padding: 0.5rem;
-}
-
-.dash-library__actions {
-  display: flex;
-  gap: calc(var(--ta-spacing) * 0.5);
+  gap: 0.35rem;
   align-items: center;
 }
 
-/* Responsive */
+.detail-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding-top: 1.1rem;
+  border-top: 1px solid var(--ta-border);
+}
+
+.detail-error {
+  font-size: 0.82rem;
+  color: var(--ta-danger);
+}
+
+/* ── Selected card ───────────────────────────────────────────────────────────── */
+
+.campaign-card--selected {
+  border-color: var(--ta-accent);
+  background-color: color-mix(in srgb, var(--ta-accent) 6%, var(--ta-surface));
+}
+
+/* ── Detail panel placeholder ────────────────────────────────────────────────── */
+
+.detail-placeholder {
+  color: var(--ta-text-muted);
+  font-size: 0.85rem;
+  font-style: italic;
+  text-align: center;
+  padding: 2rem 1rem;
+}
+
+/* ── New campaign card ('+' card) ────────────────────────────────────────────── */
+
+.campaign-card--new {
+  border-style: dashed;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100px;
+  text-align: center;
+  gap: 0.4rem;
+}
+
+.campaign-card--new:hover,
+.campaign-card--new.drag-over {
+  border-color: var(--ta-accent);
+  background-color: color-mix(in srgb, var(--ta-accent) 5%, var(--ta-surface));
+}
+
+.campaign-card--new.drag-over {
+  border-color: var(--ta-accent);
+  background-color: color-mix(in srgb, var(--ta-accent) 12%, var(--ta-surface));
+}
+
+.campaign-card__new-icon {
+  font-size: 2rem;
+  line-height: 1;
+  color: var(--ta-text-muted);
+}
+
+.campaign-card__new-label {
+  font-size: 0.82rem;
+  color: var(--ta-text-muted);
+}
+
+/* ── Form inputs used by dashboard modals ────────────────────────────────────── */
+
+.ed-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ta-text-muted);
+  display: block;
+  margin-bottom: 0.15rem;
+}
+
+.ed-input {
+  font-family: inherit;
+  font-size: 0.875rem;
+  background-color: var(--ta-surface-raised);
+  color: var(--ta-text);
+  border: 1px solid var(--ta-border);
+  border-radius: var(--ta-radius);
+  padding: 0.4rem 0.6rem;
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 0.6rem;
+}
+
+.ed-input:focus {
+  outline: none;
+  border-color: var(--ta-accent);
+}
+
+.ed-textarea-small {
+  resize: vertical;
+  min-height: 72px;
+}
+
+/* ── Responsive ─────────────────────────────────────────────────────────────── */
+
 @media (max-width: 640px) {
+  .dash-header {
+    padding: 0.6rem 1rem;
+  }
+  .dash-tabs {
+    padding: 0 1rem;
+  }
+  .dash-panel {
+    padding: 1rem;
+  }
+  .campaign-grid {
+    grid-template-columns: 1fr;
+  }
   .dash-body {
     flex-direction: column;
-    overflow: auto;
   }
-  .dash-library {
-    width: 100%;
+  .dash-detail {
+    width: 100% !important;
+    max-width: none;
     border-right: none;
     border-bottom: 1px solid var(--ta-border);
-    max-height: 40vh;
+  }
+  .dash-resizer {
+    display: none !important;
   }
 }

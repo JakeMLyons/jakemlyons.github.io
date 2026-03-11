@@ -64,6 +64,7 @@
       <button class="btn btn--ghost btn--small" id="ed-play-btn" disabled>Play</button>
       <button class="btn btn--ghost btn--small" id="ed-save-btn" disabled>Save</button>
       <button class="btn btn--ghost btn--small" id="ed-zip-btn" disabled>Download</button>
+      <button class="btn btn--ghost btn--small" id="ed-publish-btn" disabled>Publish</button>
       <!-- <button class="btn btn--ghost btn--small" id="ed-validate-btn">Validate</button> -->
     </div>
   </header>
@@ -390,6 +391,96 @@
     </div>
   </div>
 
+  <!-- Publish auth modal (sign-in gate for Publish button) -->
+  <div class="modal-overlay" id="ed-auth-modal">
+    <div class="modal">
+      <div class="modal__header">
+        <span class="modal__title">Sign In to Publish</span>
+        <button class="modal__close" id="ed-auth-cancel">✕</button>
+      </div>
+      <div class="modal__body">
+        <div class="auth-form">
+          <label class="ed-label" for="ed-auth-email">Email</label>
+          <input class="ed-input" type="email" id="ed-auth-email" autocomplete="email" placeholder="you@example.com">
+          <label class="ed-label" for="ed-auth-password">Password</label>
+          <input class="ed-input" type="password" id="ed-auth-password" autocomplete="current-password" placeholder="Password">
+          <p class="modal__error hidden" id="ed-auth-error"></p>
+          <button class="btn" id="ed-auth-submit">Sign In</button>
+          <p style="font-size:0.82rem;color:var(--ta-text-muted);text-align:center;">
+            No account? <a href="dashboard.html" style="color:var(--ta-accent);">Create one on the dashboard.</a>
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Publish success modal -->
+  <div class="modal-overlay" id="ed-publish-success-modal">
+    <div class="modal">
+      <div class="modal__header">
+        <span class="modal__title">Campaign Published!</span>
+        <button class="modal__close" id="ed-publish-success-close">✕</button>
+      </div>
+      <div class="modal__body">
+        <p style="margin-bottom:0.75rem;font-size:0.9rem;">
+          Your campaign has been uploaded. It is currently <strong>private</strong> —
+          go to My Campaigns on the dashboard to make it public.
+        </p>
+        <div style="display:flex;gap:0.5rem;justify-content:flex-end;">
+          <button class="btn btn--ghost btn--small" id="ed-publish-success-close-2">Stay in Editor</button>
+          <a href="dashboard.html" class="btn btn--small">Go to My Campaigns →</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Publish/Update choice modal — shown when user has existing campaigns -->
+  <div class="modal-overlay" id="ed-publish-choice-modal">
+    <div class="modal">
+      <div class="modal__header">
+        <span class="modal__title">Publish Campaign</span>
+        <button class="modal__close" id="ed-publish-choice-cancel">✕</button>
+      </div>
+      <div class="modal__body">
+        <div id="ed-publish-choice-update-section">
+          <p style="font-size:0.85rem;color:var(--ta-text-muted);margin-bottom:0.5rem;">
+            Update an existing campaign with this ZIP:
+          </p>
+          <select class="ed-input" id="ed-publish-choice-select"
+                  style="margin-bottom:0.5rem;"></select>
+          <button class="btn btn--small" id="ed-publish-choice-update-btn"
+                  style="width:100%;margin-bottom:0.75rem;">Update Existing</button>
+          <p style="text-align:center;font-size:0.8rem;color:var(--ta-text-muted);
+                    margin-bottom:0.75rem;">— or —</p>
+        </div>
+        <button class="btn btn--small" id="ed-publish-choice-new-btn"
+                style="width:100%;">Publish as New Campaign</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Content policy modal (editor copy — shown on first publish) -->
+  <div class="modal-overlay" id="ed-policy-modal">
+    <div class="modal">
+      <div class="modal__header">
+        <span class="modal__title">Content Policy</span>
+      </div>
+      <div class="modal__body">
+        <p style="margin-bottom:0.75rem;">By publishing a campaign you agree that your content:</p>
+        <ul style="padding-left:1.2rem;line-height:1.8;font-size:0.9rem;color:var(--ta-text-muted);">
+          <li>Does not contain illegal material</li>
+          <li>Does not target or harass individuals</li>
+          <li>Is correctly tagged NSFW if it contains adult content</li>
+          <li>Is your own work or appropriately licensed</li>
+        </ul>
+        <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1rem;">
+          <button class="btn btn--ghost btn--small" id="ed-policy-cancel">Cancel</button>
+          <button class="btn btn--small" id="ed-policy-accept">I Agree — Continue</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Choice context menu (shown on right-click of an edge; double-click to edit in form) -->
   <div id="ed-flow-choice-context-menu" class="ed-flow-context-menu hidden">
     <button class="ed-flow-context-menu__item" data-action="retarget">Change target…</button>
@@ -433,6 +524,7 @@
 <!-- Vendor libs (loaded as globals before any module) -->
 <script src="vendor/js-yaml.min.js"></script>
 <script src="vendor/jszip.min.js"></script>
+<script src="vendor/supabase.min.js"></script>
 <script src="vendor/cytoscape.min.js"></script>
 <script src="vendor/lodash-shim.js"></script>
 <script src="vendor/cytoscape-edgehandles.js"></script>
