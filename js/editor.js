@@ -27,6 +27,7 @@ let warningAcknowledged = false; // round-trip warning dialog dismissed
 let isDirty = false;        // unsaved changes since last ZIP export or campaign load
 let sceneFileMap = new Map();    // sceneId → filename (for validation navigation)
 let pendingValidation = [];      // last validateCampaign() results
+let pendingParseErr   = null;    // last parse error from runValidation()
 
 // ─── DOM references ───────────────────────────────────────────────────────────
 
@@ -483,18 +484,49 @@ function wireResizer() {
     document.addEventListener('mousemove', onMove);
     document.addEventListener('mouseup', onUp);
   });
+
+  // Right-side validation panel resizer
+  const valResizer = document.getElementById('ed-val-resizer');
+  if (!valResizer || !edValidation) return;
+
+  const savedVal = localStorage.getItem('editor_validation_width');
+  if (savedVal) edBody.style.setProperty('--val-width', `${savedVal}px`);
+
+  valResizer.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    valResizer.classList.add('ed-resizer--dragging');
+    const startX     = e.clientX;
+    const startWidth = edValidation.getBoundingClientRect().width;
+
+    function onMove(e) {
+      const newWidth = Math.max(120, Math.min(500, startWidth - (e.clientX - startX)));
+      edBody.style.setProperty('--val-width', `${newWidth}px`);
+    }
+
+    function onUp() {
+      valResizer.classList.remove('ed-resizer--dragging');
+      const finalWidth = Math.round(edValidation.getBoundingClientRect().width);
+      try { localStorage.setItem('editor_validation_width', String(finalWidth)); } catch { /* silent */ }
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup', onUp);
+    }
+
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
 }
 
 function wireTopbar() {
   edSaveBtn.addEventListener('click', saveDraft);
 
-  edValidateBtn.addEventListener('click', () => {
-    runValidation();
-    edValidation.classList.add('ed-validation--pulse');
-    edValidation.addEventListener('animationend', () => {
-      edValidation.classList.remove('ed-validation--pulse');
-    }, { once: true });
-  });
+  // Temp removed validation button
+  // edValidateBtn.addEventListener('click', () => {
+  //   runValidation();
+  //   edValidation.classList.add('ed-validation--pulse');
+  //   edValidation.addEventListener('animationend', () => {
+  //     edValidation.classList.remove('ed-validation--pulse');
+  //   }, { once: true });
+  // });
 
   edPlayBtn.addEventListener('click', playCampaign);
   edZipBtn.addEventListener('click', downloadZip);
@@ -3291,8 +3323,9 @@ async function runValidation() {
   }
 
   pendingValidation = results;
+  pendingParseErr   = parseErr;
   renderValidationPanel(parseErr, results);
-  updateActionButtons(parseErr, results);
+  updateActionButtons();
 }
 
 function renderValidationPanel(parseErr, results) {
@@ -3365,17 +3398,25 @@ function navigateToValidationItem(result) {
   }
 }
 
-function updateActionButtons(parseErr, results) {
-  const hasErrors = !!parseErr || results.some(r => r.level === 'error');
-  edPlayBtn.disabled = hasErrors;
-  edZipBtn.disabled  = hasErrors;
-  edPlayBtn.title = hasErrors ? 'Fix errors before playing' : '';
-  edZipBtn.title  = hasErrors ? 'Fix errors before downloading' : '';
+function updateActionButtons() {
+  edPlayBtn.disabled = false;
+  edZipBtn.disabled  = false;
+  edPlayBtn.title = '';
+  edZipBtn.title  = '';
 }
 
 // ─── Export & Play ────────────────────────────────────────────────────────────
 
+function confirmDespiteIssues(action) {
+  const hasErrors   = !!pendingParseErr || pendingValidation.some(r => r.level === 'error');
+  const hasWarnings = pendingValidation.some(r => r.level === 'warning');
+  if (!hasErrors && !hasWarnings) return true;
+  const kind = hasErrors ? 'errors' : 'warnings';
+  return confirm(`This campaign has validation ${kind}. ${action} anyway?`);
+}
+
 async function downloadZip() {
+  if (!confirmDespiteIssues('Download')) return;
   const map = (mode === 'code')
     ? fileMap
     : serialiseCampaign(campaign, fileMap);
@@ -3405,6 +3446,10 @@ function sanitiseZipName(title) {
 }
 
 async function playCampaign() {
+  // Save before playing
+  saveDraft();
+
+  if (!confirmDespiteIssues('Play')) return;
   let c = campaign;
   if (mode === 'code') {
     try { c = await loadCampaign(filesToArray(fileMap)); }

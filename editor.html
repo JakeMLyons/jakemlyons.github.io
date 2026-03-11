@@ -61,10 +61,10 @@
       <!-- Dashboard link -->
       <a href="dashboard.html" class="game-header__dashboard-link">← Dashboard</a>
       <!-- Action buttons -->
-      <button class="btn btn--ghost btn--small" id="ed-save-btn" disabled>💾 Save</button>
-      <button class="btn btn--ghost btn--small" id="ed-validate-btn">Validate</button>
-      <button class="btn btn--ghost btn--small" id="ed-play-btn" disabled>▶ Play</button>
-      <button class="btn btn--ghost btn--small" id="ed-zip-btn" disabled>↓ ZIP</button>
+      <button class="btn btn--ghost btn--small" id="ed-play-btn" disabled>Play</button>
+      <button class="btn btn--ghost btn--small" id="ed-save-btn" disabled>Save</button>
+      <button class="btn btn--ghost btn--small" id="ed-zip-btn" disabled>Download</button>
+      <!-- <button class="btn btn--ghost btn--small" id="ed-validate-btn">Validate</button> -->
     </div>
   </header>
 
@@ -352,6 +352,9 @@
       </div>
 
     </main>
+
+    <!-- ── Validation resize handle ──────────────────────────────────────── -->
+    <div id="ed-val-resizer" class="ed-resizer" title="Drag to resize validation panel"></div>
 
     <!-- ── Validation panel ───────────────────────────────────────────────── -->
     <aside id="ed-validation" class="ed-validation">
