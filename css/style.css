@@ -1125,6 +1125,35 @@ body {
   display: none !important;
 }
 
+/* ── Shared auth form styles (used by dashboard modals + editor publish modal) ── */
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.auth-form__switch {
+  font-size: 0.82rem;
+  color: var(--ta-text-muted);
+  text-align: center;
+  margin-top: 0.25rem;
+}
+
+.auth-form__link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--ta-accent);
+  cursor: pointer;
+  font-size: inherit;
+  text-decoration: underline;
+}
+
+.auth-form__link:hover {
+  opacity: 0.8;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;

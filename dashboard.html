@@ -3,76 +3,216 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Campaign Dashboard — Text Adventure Engine</title>
+  <title>Campaign Platform — Text Adventure Engine</title>
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/dashboard.css">
 </head>
 <body>
 <div class="dashboard">
 
-  <!-- Header -->
+  <!-- ── Header ─────────────────────────────────────────────────────────── -->
   <header class="dash-header">
-    <div>
-      <h1 class="dash-header__title">Text Adventure Engine — Campaign Dashboard</h1>
-      <p class="dash-header__subtitle">Load campaigns, validate them, and launch a game.</p>
+    <h1 class="dash-header__title">Text Adventure Engine</h1>
+    <div class="dash-header__actions">
+      <!-- Auth area: shown when logged out -->
+      <div id="auth-logged-out" class="dash-auth hidden">
+        <button class="btn btn--ghost btn--small" id="signin-btn">Sign In</button>
+        <button class="btn btn--small" id="signup-btn">Sign Up</button>
+      </div>
+      <!-- Auth area: shown when logged in -->
+      <div id="auth-logged-in" class="dash-auth hidden">
+        <span class="dash-auth__username" id="auth-username"></span>
+        <button class="btn btn--ghost btn--small" id="signout-btn">Sign Out</button>
+      </div>
     </div>
   </header>
 
+  <!-- ── Tab bar ────────────────────────────────────────────────────────── -->
+  <nav class="dash-tabs" role="tablist">
+    <button class="dash-tab dash-tab--active" id="tab-my"
+            role="tab" aria-selected="true" aria-controls="panel-my">My Campaigns</button>
+    <button class="dash-tab" id="tab-community"
+            role="tab" aria-selected="false" aria-controls="panel-community">Community</button>
+    <!-- Admin tab — injected by JS when is_admin === true -->
+  </nav>
+
+  <!-- ── Body: detail panel + main content ─────────────────────────────── -->
   <div class="dash-body">
 
-    <!-- Library panel -->
-    <aside class="dash-library">
+    <!-- Detail panel (always visible) -->
+    <aside id="dash-detail" class="dash-detail" aria-label="Campaign details"></aside>
 
-      <!-- Load sub-panel toggle -->
-      <div class="dash-library__header">
-        <span class="dash-library__title">Campaign Library</span>
-        <div class="dash-library__actions">
-          <button class="btn btn--small btn--ghost" id="new-campaign-btn">+ New</button>
-          <button class="btn btn--small" id="load-campaign-btn">+ Load</button>
+    <!-- Drag handle (always visible) -->
+    <div id="dash-resizer" class="dash-resizer dash-resizer--active"></div>
+
+    <!-- Main scrollable area -->
+    <div class="dash-main">
+
+      <!-- My Campaigns panel (default active) -->
+      <div class="dash-panel" id="panel-my" role="tabpanel" aria-labelledby="tab-my">
+        <div class="dash-panel__toolbar">
+          <button class="btn btn--small" id="upload-campaign-btn">+ Upload Campaign</button>
+          <button class="btn btn--ghost btn--small" id="refresh-my-btn">↺ Refresh</button>
+        </div>
+        <div class="campaign-grid" id="my-grid">
+          <p class="dash-empty" id="my-empty">Sign in to see your campaigns.</p>
         </div>
       </div>
 
-      <!-- Overflow notice -->
-      <div class="overflow-notice" id="overflow-notice">
-        Oldest campaign removed to make room.
+      <!-- Community panel (hidden by default) -->
+      <div class="dash-panel hidden" id="panel-community" role="tabpanel" aria-labelledby="tab-community">
+        <div class="dash-panel__toolbar">
+          <label class="dash-nsfw-toggle">
+            <input type="checkbox" id="nsfw-toggle">
+            Show NSFW
+          </label>
+          <button class="btn btn--ghost btn--small" id="refresh-community-btn">↺ Refresh</button>
+        </div>
+        <div class="campaign-grid" id="community-grid">
+          <p class="dash-empty" id="community-empty">Loading campaigns…</p>
+        </div>
+        <div class="dash-pagination" id="community-pagination"></div>
       </div>
 
-      <!-- Load sub-panel -->
-      <div class="load-subpanel" id="load-subpanel">
-        <div class="load-subpanel__drop" id="subpanel-drop-zone">
-          <p class="load-subpanel__label">Drop campaign folder here</p>
-          <div class="load-subpanel__actions">
-            <button class="btn btn--small" id="subpanel-browse-btn">Browse folder…</button>
-            <input type="file" id="subpanel-folder-input" webkitdirectory multiple hidden>
-            <button class="btn btn--ghost btn--small" id="subpanel-zip-btn">Upload .zip…</button>
-            <input type="file" id="subpanel-zip-input" accept=".zip" hidden>
-          </div>
-          <p class="load-subpanel__status" id="subpanel-status"></p>
-          <div class="load-subpanel__error" id="subpanel-error"></div>
+      <!-- Admin panel (injected tab; panel always in DOM) -->
+      <div class="dash-panel hidden" id="panel-admin" role="tabpanel" aria-labelledby="tab-admin">
+        <div class="dash-panel__toolbar">
+          <span class="dash-panel__heading">Unresolved Reports</span>
+          <button class="btn btn--ghost btn--small" id="refresh-admin-btn">↺ Refresh</button>
+        </div>
+        <div id="admin-reports-list">
+          <p class="dash-empty">Loading reports…</p>
         </div>
       </div>
 
-      <!-- Campaign card list -->
-      <div class="dash-library__scroll" id="library-scroll">
-        <p class="dash-library__empty">
-          No campaigns loaded. Click "+ Load campaign…" to add one.
-        </p>
-      </div>
-
-    </aside>
-
-    <!-- Detail panel -->
-    <main class="dash-detail" id="detail-panel">
-      <p class="dash-detail__empty">Select a campaign from the library to see details.</p>
-    </main>
-
+    </div><!-- .dash-main -->
   </div><!-- .dash-body -->
 
 </div><!-- .dashboard -->
 
+<!-- ── Modals ─────────────────────────────────────────────────────────────── -->
+
+<!-- Sign In modal -->
+<div class="modal-overlay" id="signin-modal" role="dialog" aria-modal="true" aria-labelledby="signin-modal-title">
+  <div class="modal">
+    <div class="modal__header">
+      <h2 class="modal__title" id="signin-modal-title">Sign In</h2>
+      <button class="modal__close" id="signin-modal-close" aria-label="Close">✕</button>
+    </div>
+    <div class="modal__body">
+      <div class="auth-form">
+        <label class="ed-label" for="signin-email">Email</label>
+        <input class="ed-input" type="email" id="signin-email" autocomplete="email" placeholder="you@example.com">
+        <label class="ed-label" for="signin-password">Password</label>
+        <input class="ed-input" type="password" id="signin-password" autocomplete="current-password" placeholder="Password">
+        <p class="modal__error hidden" id="signin-error"></p>
+        <button class="btn" id="signin-submit">Sign In</button>
+        <p class="auth-form__switch">
+          No account? <button class="auth-form__link" id="signin-to-signup">Sign up instead</button>
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Sign Up modal -->
+<div class="modal-overlay" id="signup-modal" role="dialog" aria-modal="true" aria-labelledby="signup-modal-title">
+  <div class="modal">
+    <div class="modal__header">
+      <h2 class="modal__title" id="signup-modal-title">Create Account</h2>
+      <button class="modal__close" id="signup-modal-close" aria-label="Close">✕</button>
+    </div>
+    <div class="modal__body">
+      <div class="auth-form">
+        <label class="ed-label" for="signup-username">Username</label>
+        <input class="ed-input" type="text" id="signup-username" autocomplete="username"
+               placeholder="letters, numbers, _ or -" maxlength="30">
+        <label class="ed-label" for="signup-email">Email</label>
+        <input class="ed-input" type="email" id="signup-email" autocomplete="email" placeholder="you@example.com">
+        <label class="ed-label" for="signup-password">Password</label>
+        <input class="ed-input" type="password" id="signup-password" autocomplete="new-password" placeholder="Min 6 characters">
+        <p class="modal__error hidden" id="signup-error"></p>
+        <button class="btn" id="signup-submit">Create Account</button>
+        <p class="auth-form__switch">
+          Already have an account? <button class="auth-form__link" id="signup-to-signin">Sign in instead</button>
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Content Policy modal -->
+<div class="modal-overlay" id="policy-modal" role="dialog" aria-modal="true" aria-labelledby="policy-modal-title">
+  <div class="modal">
+    <div class="modal__header">
+      <h2 class="modal__title" id="policy-modal-title">Content Policy</h2>
+    </div>
+    <div class="modal__body">
+      <p style="margin-bottom:0.75rem;">By publishing a campaign you agree that your content:</p>
+      <ul style="padding-left:1.2rem;line-height:1.8;font-size:0.9rem;color:var(--ta-text-muted);">
+        <li>Does not contain illegal material</li>
+        <li>Does not target or harass individuals</li>
+        <li>Is correctly tagged NSFW if it contains adult content</li>
+        <li>Is your own work or appropriately licensed</li>
+      </ul>
+      <p class="modal__error hidden" id="policy-error"></p>
+      <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:1rem;">
+        <button class="btn btn--ghost btn--small" id="policy-cancel">Cancel</button>
+        <button class="btn btn--small" id="policy-accept">I Agree — Continue</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Upload Campaign ZIP modal -->
+<div class="modal-overlay" id="upload-modal" role="dialog" aria-modal="true" aria-labelledby="upload-modal-title">
+  <div class="modal">
+    <div class="modal__header">
+      <h2 class="modal__title" id="upload-modal-title">Upload Campaign</h2>
+      <button class="modal__close" id="upload-modal-close" aria-label="Close">✕</button>
+    </div>
+    <div class="modal__body">
+      <p style="font-size:0.85rem;color:var(--ta-text-muted);margin-bottom:0.75rem;">
+        Select a campaign ZIP to open in the editor for publishing. Must be under 1 MB.
+      </p>
+      <input type="file" id="upload-zip-input" accept=".zip">
+      <p class="modal__error hidden" id="upload-error"></p>
+      <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:0.75rem;">
+        <button class="btn btn--ghost btn--small" id="upload-cancel">Cancel</button>
+        <button class="btn btn--small" id="upload-submit">Open in Editor</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Report Campaign modal -->
+<div class="modal-overlay" id="report-modal" role="dialog" aria-modal="true" aria-labelledby="report-modal-title">
+  <div class="modal">
+    <div class="modal__header">
+      <h2 class="modal__title" id="report-modal-title">Report Campaign</h2>
+      <button class="modal__close" id="report-modal-close" aria-label="Close">✕</button>
+    </div>
+    <div class="modal__body">
+      <input type="hidden" id="report-campaign-id">
+      <label class="ed-label" for="report-reason">Reason (optional)</label>
+      <textarea class="ed-input ed-textarea-small" id="report-reason" rows="3" maxlength="1000"
+                placeholder="Describe why this campaign violates the content policy."></textarea>
+      <p class="modal__error hidden" id="report-error"></p>
+      <div style="display:flex;gap:0.5rem;justify-content:flex-end;margin-top:0.75rem;">
+        <button class="btn btn--ghost btn--small" id="report-cancel">Cancel</button>
+        <button class="btn btn--small" id="report-submit">Submit Report</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Toast notification -->
+<div id="dash-toast" class="dash-toast hidden" role="status" aria-live="polite"></div>
+
 <!-- Vendor libs -->
 <script src="vendor/js-yaml.min.js"></script>
 <script src="vendor/jszip.min.js"></script>
+<script src="vendor/supabase.min.js"></script>
 
 <!-- Dashboard module -->
 <script type="module" src="js/dashboard.js"></script>

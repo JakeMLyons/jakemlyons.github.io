@@ -14,6 +14,15 @@
 import { loadCampaign, validateCampaign, RESERVED_COMMAND_NAMES } from './campaign.js';
 import { serialiseCampaign } from './serialise.js';
 import { initFlowEditor, destroyFlowEditor, cancelEdgeSource, getNodePositions, focusNode } from './visual-editor.js';
+import { unzipToFiles } from './zip-utils.js';
+import { detectFeatures } from './campaign-utils.js';
+import {
+  getUser, signIn as sbSignIn, getProfile, acceptPolicy as sbAcceptPolicy,
+  publishCampaign,
+  listMyCampaigns,
+  updateCampaignZip,
+  updateCampaign as updateCampaignMeta,
+} from './supabase-client.js';
 
 // ─── Module-scoped state ──────────────────────────────────────────────────────
 
@@ -58,6 +67,7 @@ const edSaveBtn      = document.getElementById('ed-save-btn');
 const edValidateBtn  = document.getElementById('ed-validate-btn');
 const edPlayBtn      = document.getElementById('ed-play-btn');
 const edZipBtn       = document.getElementById('ed-zip-btn');
+const edPublishBtn   = document.getElementById('ed-publish-btn');
 
 // Sidebar
 const edSidebar      = document.getElementById('ed-sidebar');
@@ -189,6 +199,7 @@ document.addEventListener('DOMContentLoaded', () => {
   wireFlowPane();
   wireValidationPanel();
   wireModals();
+  wirePublishModals();
   wireResizer();
   checkEditorHandoff();
 });
@@ -530,6 +541,7 @@ function wireTopbar() {
 
   edPlayBtn.addEventListener('click', playCampaign);
   edZipBtn.addEventListener('click', downloadZip);
+  edPublishBtn.addEventListener('click', handlePublish);
 
   edSidebarToggle.addEventListener('click', () => {
     edSidebar.classList.toggle('ed-sidebar--open');
@@ -546,9 +558,9 @@ function updateTitle() {
 }
 
 function markDirty() {
-  if (isDirty) return;
   isDirty = true;
   updateTitle();
+  debouncedAutosave();
 }
 
 function clearDirty() {
@@ -3399,10 +3411,12 @@ function navigateToValidationItem(result) {
 }
 
 function updateActionButtons() {
-  edPlayBtn.disabled = false;
-  edZipBtn.disabled  = false;
-  edPlayBtn.title = '';
-  edZipBtn.title  = '';
+  edPlayBtn.disabled    = false;
+  edZipBtn.disabled     = false;
+  edPublishBtn.disabled = false;
+  edPlayBtn.title    = '';
+  edZipBtn.title     = '';
+  edPublishBtn.title = '';
 }
 
 // ─── Export & Play ────────────────────────────────────────────────────────────
@@ -3770,20 +3784,8 @@ function truncate(str, maxLen) {
   return str.length <= maxLen ? str : str.slice(0, maxLen) + '…';
 }
 
-// ─── File I/O helpers (mirrored from dashboard.js) ────────────────────────────
-
-async function unzipToFiles(arrayBuffer) {
-  const zip = await JSZip.loadAsync(arrayBuffer);
-  const files = [];
-  for (const [relativePath, zipEntry] of Object.entries(zip.files)) {
-    if (zipEntry.dir) continue;
-    const entryName = relativePath.split('/').pop();
-    if (!entryName.endsWith('.yaml') && entryName !== 'theme.css') continue;
-    const text = await zipEntry.async('string');
-    files.push({ path: relativePath, text });
-  }
-  return files;
-}
+// ─── File I/O helpers ─────────────────────────────────────────────────────────
+// Note: unzipToFiles is imported from zip-utils.js
 
 async function readEntries(entries) {
   const results = [];
@@ -3828,3 +3830,305 @@ function readAllEntries(reader) {
     read();
   });
 }
+
+// ─── Publish flow ─────────────────────────────────────────────────────────────
+
+// Module-level ref to the currently signed-in user (populated lazily on publish click).
+let publishUser = null;
+
+function wirePublishModals() {
+  // Auth modal
+  const edAuthModal    = document.getElementById('ed-auth-modal');
+  const edAuthCancel   = document.getElementById('ed-auth-cancel');
+  const edAuthSubmit   = document.getElementById('ed-auth-submit');
+  const edAuthEmail    = document.getElementById('ed-auth-email');
+  const edAuthPassword = document.getElementById('ed-auth-password');
+  const edAuthError    = document.getElementById('ed-auth-error');
+
+  if (edAuthCancel) {
+    edAuthCancel.addEventListener('click', () => edAuthModal.classList.remove('modal-overlay--visible'));
+    edAuthModal.addEventListener('click', (e) => {
+      if (e.target === edAuthModal) edAuthModal.classList.remove('modal-overlay--visible');
+    });
+  }
+
+  if (edAuthSubmit) {
+    const doSignIn = async () => {
+      edAuthError.classList.add('hidden');
+      const email    = edAuthEmail.value.trim();
+      const password = edAuthPassword.value;
+      if (!email || !password) { showEdAuthError('Email and password are required.'); return; }
+
+      edAuthSubmit.disabled = true;
+      edAuthSubmit.textContent = 'Signing in…';
+      try {
+        const { user, error } = await sbSignIn(email, password);
+        if (error) { showEdAuthError(error.message); return; }
+        publishUser = user;
+        edAuthModal.classList.remove('modal-overlay--visible');
+        // Re-trigger publish now that we're signed in
+        handlePublish();
+      } catch {
+        showEdAuthError('Could not connect to the platform.');
+      } finally {
+        edAuthSubmit.disabled = false;
+        edAuthSubmit.textContent = 'Sign In';
+      }
+    };
+    edAuthSubmit.addEventListener('click', doSignIn);
+    edAuthPassword.addEventListener('keydown', (e) => { if (e.key === 'Enter') doSignIn(); });
+  }
+
+  // Publish success modal
+  const edPublishSuccessModal  = document.getElementById('ed-publish-success-modal');
+  const edPublishSuccessClose  = document.getElementById('ed-publish-success-close');
+  const edPublishSuccessClose2 = document.getElementById('ed-publish-success-close-2');
+  if (edPublishSuccessClose)  edPublishSuccessClose.addEventListener('click',  () => edPublishSuccessModal.classList.remove('modal-overlay--visible'));
+  if (edPublishSuccessClose2) edPublishSuccessClose2.addEventListener('click', () => edPublishSuccessModal.classList.remove('modal-overlay--visible'));
+}
+
+function showEdAuthError(msg) {
+  const el = document.getElementById('ed-auth-error');
+  if (el) { el.textContent = msg; el.classList.remove('hidden'); }
+}
+
+/**
+ * Returns true if the current user has accepted the content policy;
+ * shows the policy modal and waits for acceptance if not.
+ */
+async function checkPolicyAccepted() {
+  if (!publishUser) return false;
+
+  let profile;
+  try {
+    const result = await getProfile(publishUser.id);
+    profile = result.profile;
+  } catch { return false; }
+
+  if (profile?.policy_accepted_at) return true;
+
+  // Show policy modal and wait
+  return new Promise((resolve) => {
+    const modal   = document.getElementById('ed-policy-modal');
+    const accept  = document.getElementById('ed-policy-accept');
+    const cancel  = document.getElementById('ed-policy-cancel');
+    if (!modal || !accept || !cancel) { resolve(false); return; }
+
+    modal.classList.add('modal-overlay--visible');
+
+    function onAccept() {
+      accept.removeEventListener('click', onAccept);
+      cancel.removeEventListener('click', onCancel);
+      modal.classList.remove('modal-overlay--visible');
+      sbAcceptPolicy().catch(() => {});
+      resolve(true);
+    }
+    function onCancel() {
+      accept.removeEventListener('click', onAccept);
+      cancel.removeEventListener('click', onCancel);
+      modal.classList.remove('modal-overlay--visible');
+      resolve(false);
+    }
+    accept.addEventListener('click', onAccept);
+    cancel.addEventListener('click', onCancel);
+  });
+}
+
+/**
+ * Show the publish/update choice modal when the user has existing campaigns.
+ *
+ * Resolves with:
+ *   undefined — user cancelled (X or overlay click)
+ *   null      — "Publish as New Campaign" chosen
+ *   string    — UUID of the campaign to update
+ *
+ * @param {Array<{ id: string, title: string }>} campaigns
+ * @returns {Promise<string|null|undefined>}
+ */
+function showPublishChoiceModal(campaigns) {
+  return new Promise((resolve) => {
+    const modal      = document.getElementById('ed-publish-choice-modal');
+    const select     = document.getElementById('ed-publish-choice-select');
+    const updateBtn  = document.getElementById('ed-publish-choice-update-btn');
+    const newBtn     = document.getElementById('ed-publish-choice-new-btn');
+    const cancelBtn  = document.getElementById('ed-publish-choice-cancel');
+    const updateSect = document.getElementById('ed-publish-choice-update-section');
+    if (!modal) { resolve(null); return; }
+
+    // Populate select
+    select.innerHTML = '';
+    const placeholder = document.createElement('option');
+    placeholder.value    = '';
+    placeholder.textContent = '— choose a campaign —';
+    placeholder.disabled = true;
+    placeholder.selected = true;
+    select.appendChild(placeholder);
+    for (const c of campaigns) {
+      const opt = document.createElement('option');
+      opt.value       = c.id;
+      opt.textContent = c.title;
+      select.appendChild(opt);
+    }
+    // Pre-select if only one exists
+    if (campaigns.length === 1) select.value = campaigns[0].id;
+
+    // Hide update section if no campaigns (shouldn't happen, but guard)
+    updateSect.classList.toggle('hidden', campaigns.length === 0);
+
+    modal.classList.add('modal-overlay--visible');
+
+    function cleanup() {
+      cancelBtn.removeEventListener('click', onCancel);
+      updateBtn.removeEventListener('click', onUpdate);
+      newBtn.removeEventListener('click', onNew);
+      modal.removeEventListener('click', onOverlay);
+      modal.classList.remove('modal-overlay--visible');
+    }
+    function onCancel()  { cleanup(); resolve(undefined); }
+    function onNew()     { cleanup(); resolve(null); }
+    function onUpdate()  {
+      const id = select.value;
+      if (!id) return; // no campaign selected yet
+      cleanup();
+      resolve(id);
+    }
+    function onOverlay(e) { if (e.target === modal) { cleanup(); resolve(undefined); } }
+
+    cancelBtn.addEventListener('click', onCancel);
+    updateBtn.addEventListener('click', onUpdate);
+    newBtn.addEventListener('click', onNew);
+    modal.addEventListener('click', onOverlay);
+  });
+}
+
+/**
+ * Main publish handler. All Supabase calls live here so the editor
+ * initialises identically whether online or offline.
+ *
+ * Flow:
+ *  1. Check login → show auth modal if not signed in
+ *  2. Validate campaign (warn on errors/warnings)
+ *  3. Check content policy → show policy modal if not yet accepted
+ *  4. Build ZIP in memory
+ *  5. Check ZIP size (≤ 1 MB)
+ *  6. Fetch existing campaigns; show choice modal if any exist
+ *     6a. Update existing → updateCampaignZip + updateCampaignMeta → toast
+ *     6b. Publish new    → publishCampaign → success modal
+ */
+async function handlePublish() {
+  if (!campaign) return;
+
+  // 1. Check login
+  if (!publishUser) {
+    try {
+      const { user } = await getUser();
+      publishUser = user;
+    } catch { /* offline */ }
+  }
+
+  if (!publishUser) {
+    const authModal = document.getElementById('ed-auth-modal');
+    if (authModal) authModal.classList.add('modal-overlay--visible');
+    return;
+  }
+
+  // 2. Validate (warn but allow)
+  if (!confirmDespiteIssues('Publish')) return;
+
+  // 3. Policy check
+  const policyOk = await checkPolicyAccepted();
+  if (!policyOk) return;
+
+  // 4. Build ZIP (same as downloadZip)
+  let c = campaign;
+  if (mode === 'code') {
+    try { c = await loadCampaign(filesToArray(fileMap)); }
+    catch { showToast('Fix parse errors before publishing.'); return; }
+  }
+
+  const map  = (mode === 'code') ? fileMap : serialiseCampaign(campaign, fileMap);
+  const zip  = new JSZip();
+  for (const [filename, text] of map) {
+    zip.file(filename, text);
+  }
+  const zipBlob = await zip.generateAsync({ type: 'blob' });
+
+  // 5. Size check
+  const MAX_ZIP = 1 * 1024 * 1024;
+  if (zipBlob.size > MAX_ZIP) {
+    showToast(`Campaign ZIP is ${(zipBlob.size / 1024).toFixed(0)} KB — exceeds the 1 MB limit.`);
+    return;
+  }
+
+  const title       = c.metadata?.title ?? 'Untitled';
+  const description = c.metadata?.description ?? null;
+  // FAILSAFE_SCHEMA: coerce nsfw flag explicitly
+  const isNsfw      = c.metadata?.nsfw === true || c.metadata?.nsfw === 'true';
+  const features    = detectFeatures(c);
+
+  // 6. Offer update choice if user has existing campaigns
+  let targetId = null;
+  try {
+    const { campaigns: existing } = await listMyCampaigns();
+    if (existing.length > 0) {
+      targetId = await showPublishChoiceModal(existing);
+      if (targetId === undefined) return; // user cancelled
+    }
+  } catch { /* offline — fall through to publish-new */ }
+
+  edPublishBtn.disabled = true;
+
+  if (targetId) {
+    // 6a. Update existing campaign
+    edPublishBtn.textContent = 'Updating…';
+    try {
+      const { error: zipErr } = await updateCampaignZip(targetId, zipBlob);
+      if (zipErr) { showToast('Update failed: ' + zipErr.message); return; }
+      // Metadata update is best-effort — ZIP is already committed if this fails
+      await updateCampaignMeta(targetId, { title, description, is_nsfw: isNsfw, features });
+      try { localStorage.removeItem('adventure_editor_draft'); } catch { /* silent */ }
+      clearDirty();
+      showToast('Campaign updated.');
+    } catch {
+      showToast('Could not connect to the platform. Export your campaign as a ZIP instead.');
+    } finally {
+      edPublishBtn.disabled = false;
+      edPublishBtn.textContent = 'Publish';
+    }
+    return;
+  }
+
+  // 6b. Publish as new campaign
+  edPublishBtn.textContent = 'Publishing…';
+  try {
+    const { error } = await publishCampaign(zipBlob, title, description, isNsfw, features);
+    if (error) {
+      showToast('Publish failed: ' + error.message);
+      return;
+    }
+    try { localStorage.removeItem('adventure_editor_draft'); } catch { /* silent */ }
+    clearDirty();
+    const successModal = document.getElementById('ed-publish-success-modal');
+    if (successModal) successModal.classList.add('modal-overlay--visible');
+  } catch {
+    showToast('Could not connect to the platform. Export your campaign as a ZIP instead.');
+  } finally {
+    edPublishBtn.disabled = false;
+    edPublishBtn.textContent = 'Publish';
+  }
+}
+
+// ─── Autosave (Phase 2A) ──────────────────────────────────────────────────────
+
+function saveDraftSilently() {
+  if (!campaign) return;
+  const map = (mode === 'code') ? fileMap : serialiseCampaign(campaign, fileMap);
+  try {
+    localStorage.setItem('adventure_editor_draft', JSON.stringify({
+      savedAt: new Date().toISOString(),
+      files:   Object.fromEntries(map),
+    }));
+  } catch { /* silent — quota exceeded */ }
+}
+
+const debouncedAutosave = debounce(saveDraftSilently, 2000);

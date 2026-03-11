@@ -12,7 +12,7 @@
  */
 
 import { GameEngine } from './engine.js';
-import { validateCampaign } from './campaign.js';
+import { loadCampaign, validateCampaign } from './campaign.js';
 import {
   saveGame,
   listSaves,
@@ -21,6 +21,7 @@ import {
   downloadSave,
   loadSaveFromFile,
 } from './persistence.js';
+import { unzipToFiles } from './zip-utils.js';
 
 // ─── Module-scoped state ──────────────────────────────────────────────────────
 
@@ -120,6 +121,13 @@ document.addEventListener('DOMContentLoaded', () => {
 function checkDashboardHandoff() {
   const url = new URL(window.location.href);
 
+  // ?src= remote ZIP URL (platform share links)
+  const remoteSrc = url.searchParams.get('src');
+  if (remoteSrc) {
+    loadCampaignFromURL(remoteSrc);
+    return;
+  }
+
   if (url.searchParams.has('handoff') && typeof BroadcastChannel !== 'undefined') {
     // BroadcastChannel path: notify dashboard we're ready
     const ch = new BroadcastChannel('adventure_handoff');
@@ -162,6 +170,64 @@ function tryLocalStorageHandoff() {
   launchedFromDashboard = true;
   dashboardLinkGame.classList.remove('hidden');
   receiveCampaignData(data.campaign, data.name);
+}
+
+// ─── Remote campaign loading (?src= parameter) ────────────────────────────────
+
+// Only ZIPs served from this domain are trusted for ?src= links.
+const ALLOWED_SRC_HOSTNAME = 'tfeqgvgjpdfwsehxogdw.supabase.co';
+
+function validateSrcUrl(rawUrl) {
+  try {
+    return new URL(rawUrl).hostname === ALLOWED_SRC_HOSTNAME;
+  } catch {
+    return false;
+  }
+}
+
+async function loadCampaignFromURL(rawUrl) {
+  // 1. Validate domain
+  if (!validateSrcUrl(rawUrl)) {
+    alert('Could not load remote campaign: source URL is not from a trusted domain.');
+    window.location.replace('dashboard.html');
+    return;
+  }
+
+  // 2. Fetch
+  let arrayBuffer;
+  try {
+    const res = await fetch(rawUrl);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    arrayBuffer = await res.arrayBuffer();
+  } catch (e) {
+    alert('Could not load remote campaign: ' + (e.message ?? 'network error'));
+    window.location.replace('dashboard.html');
+    return;
+  }
+
+  // 3. Verify ZIP magic bytes (PK\x03\x04)
+  const header = new Uint8Array(arrayBuffer.slice(0, 4));
+  if (header[0] !== 0x50 || header[1] !== 0x4B || header[2] !== 0x03 || header[3] !== 0x04) {
+    alert('Could not load remote campaign: the file does not appear to be a valid ZIP.');
+    window.location.replace('dashboard.html');
+    return;
+  }
+
+  // 4. Unzip + load
+  let loaded;
+  try {
+    const files = await unzipToFiles(arrayBuffer);
+    loaded = await loadCampaign(files);
+  } catch (e) {
+    alert('Could not load remote campaign: ' + (e.message ?? 'invalid campaign'));
+    window.location.replace('dashboard.html');
+    return;
+  }
+
+  // 5. Start game
+  launchedFromDashboard = true;
+  dashboardLinkGame.classList.remove('hidden');
+  receiveCampaignData(loaded, loaded.metadata?.title ?? 'Campaign');
 }
 
 async function receiveCampaignData(data, name) {
