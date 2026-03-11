@@ -8,7 +8,7 @@ A browser-based text adventure engine. Play interactive branching stories, build
 
 Open **dashboard.html** in your browser (or visit the hosted version [here](http://jakemlyons.github.io "Link to dashboard"))
 
-Five campaigns load automatically — click any card to see details, then click **Launch** to play.
+Switch to the **Community** tab to browse published campaigns. Click any card to see details in the left panel, then click **▶ Play** to launch it.
 
 > **Tip:** If you're running this locally, serve the folder with a static file server rather than opening files directly. Browser security restrictions can block local file loading.
 >
@@ -53,9 +53,7 @@ The sidebar is resizable — drag its right edge to adjust the width (persisted 
 
 ## Loading Your Own Campaign
 
-From the **Dashboard**, drag and drop a campaign folder or ZIP onto the library panel, or click **Browse** to pick one. The campaign is added to your library for this session and you can launch it at any time.
-
-You can also load a campaign directly in the game player via the **Browse Folder** or **Upload ZIP** buttons on the drop zone.
+From the **Dashboard**, click **Upload ZIP** in the My Campaigns toolbar and select a campaign ZIP file. The campaign opens immediately in the editor, where you can review and play it.
 
 ---
 
@@ -76,29 +74,38 @@ From the **Save / Load** panel you can:
 
 ## The Dashboard
 
-The dashboard (`dashboard.html`) is the main hub for browsing and launching campaigns.
+The dashboard (`dashboard.html`) is the main hub for browsing, creating, and publishing campaigns. It has three tabs:
 
-- The five bundled campaigns load automatically when the dashboard opens.
-- Add your own campaigns by dragging folders or ZIPs onto the library panel.
-- Click a campaign card to see its metadata, scene list, and validation status. Cards show feature badges (attributes, items, recipes, assets, journal) for a quick overview.
-- Click **Launch** to open a campaign in the game player.
-- Click **Edit** to open a campaign in the campaign editor.
+**My Campaigns** — your local tools and published campaigns.
+- Click the **+** card to create a new campaign in the editor.
+- If you have a saved editor draft, it appears as a card here — click it to play, continue editing, or discard it.
+- Click **Upload ZIP** to open any campaign ZIP in the editor (no sign-in required).
+- Sign in to see your published campaigns. Click a card to open its detail panel (left side), where you can edit the title, description, public/NSFW toggles, and view **Version History**. Up to five previous versions are kept automatically — click **Restore** to roll back. Action buttons: **▶ Play**, **✎ Open in Editor**, **Delete Campaign**.
+- Click **↺ Refresh** to reload your published campaigns from the platform.
 
-The library holds up to 10 campaigns per session. It is not persisted — campaigns you add manually must be re-added each time you open the dashboard. Save data does persist in local storage.
+**Community** — publicly published campaigns from all users.
+- Click any card to see its details (author, description, feature badges) and **▶ Play** it.
+- Sign in to vote (▲) or report campaigns.
+
+**Admin** — visible only to users with `is_admin = true` in their profile. Lists unresolved content reports with Resolve and Delete Campaign actions.
+
+Campaign cards show feature badges (⚙ attributes, ⚔ items, ⚗ recipes, ♫ assets, ✐ journal) for a quick overview of what a campaign uses.
+
+The detail panel on the left is resizable — drag the divider to adjust its width (persisted across sessions). Clicking a card a second time deselects it.
 
 ---
 
 ## The Campaign Editor
 
-Open **editor.html** to create or edit campaigns. Two modes are available, switchable at any time:
+Open **editor.html** to create or edit campaigns. Three modes are available, switchable at any time:
 
 **Code mode** — Write and edit raw YAML directly. A file-tree sidebar lets you switch between files in multi-file campaigns. Line numbers are shown alongside the editor. Good for experienced authors who prefer full control.
 
-**Visual mode** — Edit metadata, attributes, scenes, item descriptions, and assets using forms. No YAML knowledge required. The sidebar has sections — **Metadata**, **Attributes**, **Items**, **Assets**, and **Scenes** — each opening the relevant form. Clicking **Scenes** shows a flow diagram of how all scenes connect; click any node to open that scene's editor.
+**Form mode** — Edit metadata, attributes, scenes, item descriptions, and assets using forms. No YAML knowledge required. The sidebar has sections — **Metadata**, **Attributes**, **Items**, **Assets**, and **Scenes** — each opening the relevant form. Choices are expanded by default with **Expand All** / **Collapse All** buttons. Each choice has a **→** button next to "Next scene" to jump to the target scene. The `affect_attributes` section is collapsible.
 
-Both modes work on the same in-memory campaign. Switching modes converts the data between representations automatically.
+**Visual mode** — A Cytoscape.js flowchart showing how all scenes connect. Click any node to open that scene in Form mode. Right-click a node for context actions (edit, rename, set start, delete). Double-click the canvas to create a new scene.
 
-In Visual mode, choices are expanded by default with **Expand All** / **Collapse All** buttons for quick navigation. Each choice has a **→** button next to the "Next scene" dropdown that jumps directly to the target scene. The `affect_attributes` section on choices and `on_enter` blocks is collapsible to reduce clutter.
+All three modes work on the same in-memory campaign. Switching converts the data between representations automatically.
 
 A **Validation** panel (toggled from the toolbar) shows errors and warnings in real time: missing scene references, unreachable scenes, reserved name collisions, and more.
 
@@ -106,6 +113,7 @@ When you're done:
 
 - Click **Export ZIP** to download the campaign as a `.zip` archive.
 - Click **Play** to launch it directly in the game player without downloading anything.
+- Click **Publish** to upload the campaign to the community platform (requires a free account). If you have existing published campaigns, a modal lets you choose to update one of them or publish as a new entry.
 
 ---
 
