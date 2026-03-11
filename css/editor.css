@@ -1382,7 +1382,7 @@ details[open] .ed-collapsible__header::before {
 /* ── Validation panel (right column) ─────────────────────────────────────── */
 
 .ed-validation {
-  width: 300px;
+  width: var(--val-width, 300px);
   flex-shrink: 0;
   border-left: 1px solid var(--ta-border);
   background-color: var(--ta-surface);

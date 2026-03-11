@@ -396,6 +396,11 @@ export function validateCampaign(campaign) {
   if (start && start in scenes) {
     const reachable = new Set();
     const queue = [start];
+    // min_scene / max_scene are reachable via attribute thresholds, not choice links
+    for (const def of Object.values(attrDefs)) {
+      if (def.min_scene) queue.push(def.min_scene);
+      if (def.max_scene) queue.push(def.max_scene);
+    }
     while (queue.length > 0) {
       const sid = queue.pop();
       if (reachable.has(sid) || !(sid in scenes)) continue;
