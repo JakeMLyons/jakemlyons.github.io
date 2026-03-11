@@ -42,6 +42,8 @@ let stepping = false;
 // Music state
 let currentMusicUrl = null;
 let isMuted = false;
+let clearingImage = false; // suppress onerror when we intentionally blank sceneImage.src
+let clearingMusic = false; // suppress onerror when we intentionally blank sceneMusic.src
 
 // ─── DOM references ───────────────────────────────────────────────────────────
 
@@ -357,12 +359,12 @@ function renderAssets(output) {
   // Image
   if (placement === 'none') {
     sceneImage.classList.remove('scene-image--visible');
-    sceneImage.src = '';
+    clearingImage = true; sceneImage.src = '';
     scenePanel.style.backgroundImage = '';
     scenePanel.classList.remove('scene-panel--bg-image');
   } else if (placement === 'background') {
     sceneImage.classList.remove('scene-image--visible');
-    sceneImage.src = '';
+    clearingImage = true; sceneImage.src = '';
     if (showImage) {
       scenePanel.style.backgroundImage = `url(${JSON.stringify(imageUrl)})`;
       scenePanel.classList.add('scene-panel--bg-image');
@@ -379,7 +381,7 @@ function renderAssets(output) {
       sceneImage.classList.add('scene-image--visible');
     } else {
       sceneImage.classList.remove('scene-image--visible');
-      sceneImage.src = '';
+      clearingImage = true; sceneImage.src = '';
     }
   }
 
@@ -403,7 +405,7 @@ function applyMusic(musicUrl) {
   } else {
     if (currentMusicUrl !== null) {
       sceneMusic.pause();
-      sceneMusic.src = '';
+      clearingMusic = true; sceneMusic.src = '';
       currentMusicUrl = null;
     }
     musicResumeBtn.classList.add('hidden');
@@ -426,14 +428,16 @@ function renderSfx(sfx) {
 
 function wireMedia() {
   sceneImage.onerror = () => {
+    if (clearingImage) { clearingImage = false; return; }
     console.warn(`[player] Failed to load scene image: ${sceneImage.src}`);
     sceneImage.classList.remove('scene-image--visible');
-    sceneImage.src = '';
+    clearingImage = true; sceneImage.src = '';
   };
 
   sceneMusic.addEventListener('error', () => {
+    if (clearingMusic) { clearingMusic = false; return; }
     console.warn(`[player] Failed to load scene music: ${sceneMusic.src}`);
-    sceneMusic.src = '';
+    clearingMusic = true; sceneMusic.src = '';
     currentMusicUrl = null;
     musicResumeBtn.classList.add('hidden');
   });
