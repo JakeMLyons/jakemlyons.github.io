@@ -39,6 +39,7 @@ let showNsfw               = false;
 let nsfwDisclaimerAccepted = false;
 
 let communityData = [];   // campaign rows from listPublicCampaigns
+let _communityLoadGen = 0; // incremented each call; stale completions are discarded
 let myData        = [];   // campaign rows from listMyCampaigns
 let userVotes     = new Set();
 let adminLoaded   = false;
@@ -896,32 +897,44 @@ function wireNsfwToggle() {
 // ─── Community tab ────────────────────────────────────────────────────────────
 
 async function loadCommunity() {
+  const gen = ++_communityLoadGen;
+
   communityGrid.innerHTML = '';
   const loading = document.createElement('p');
   loading.className = 'dash-empty';
   loading.textContent = 'Loading campaigns…';
   communityGrid.appendChild(loading);
 
+  const TIMEOUT_MS = 15_000;
   try {
-    const { campaigns, error } = await listPublicCampaigns({
-      nsfw: showNsfw, page: communityPage, pageSize: PAGE_SIZE,
-    });
+    const { campaigns, error } = await Promise.race([
+      listPublicCampaigns({ nsfw: showNsfw, page: communityPage, pageSize: PAGE_SIZE }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), TIMEOUT_MS)),
+    ]);
+    if (gen !== _communityLoadGen) return; // superseded by a newer load
     if (error) throw error;
     communityData = campaigns ?? [];
 
+    // Render immediately so campaigns appear even if vote fetch is slow/hung
+    userVotes = new Set();
+    renderCommunityGrid();
+    renderPagination();
+
+    // Fetch vote state in background; re-render only if still the active load
     if (currentUser && communityData.length > 0) {
       try {
         const ids = communityData.map((c) => c.id);
-        const { votes } = await getUserVotes(ids);
+        const { votes } = await Promise.race([
+          getUserVotes(ids),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), TIMEOUT_MS)),
+        ]);
+        if (gen !== _communityLoadGen) return;
         userVotes = votes;
-      } catch { userVotes = new Set(); }
-    } else {
-      userVotes = new Set();
+        renderCommunityGrid();
+      } catch { /* votes stay as empty set; grid already rendered */ }
     }
-
-    renderCommunityGrid();
-    renderPagination();
   } catch {
+    if (gen !== _communityLoadGen) return;
     communityGrid.innerHTML = '';
     const msg = document.createElement('p');
     msg.className = 'dash-empty';

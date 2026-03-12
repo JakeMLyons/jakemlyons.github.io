@@ -20,7 +20,7 @@ const MAX_CAMPAIGNS_PER_USER  = 20;
 const MAX_ZIP_SIZE            = 1 * 1024 * 1024; // 1 MB
 const MAX_VERSIONS_PER_CAMPAIGN = 5;
 
-// Lazy-initialised client. createClient() is safe to call without network.
+// Lazy-initialised authenticated client (persists session, auto-refreshes token).
 let _client = null;
 
 function getClient() {
@@ -31,6 +31,26 @@ function getClient() {
     _client = globalThis.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   }
   return _client;
+}
+
+// Stateless public client — no session, no token refresh.
+// Used for unauthenticated reads so they never block on a GoTrue refresh lock.
+let _publicClient = null;
+
+function getPublicClient() {
+  if (!_publicClient) {
+    if (!globalThis.supabase?.createClient) {
+      throw new Error('Supabase JS library not loaded. Platform features are unavailable.');
+    }
+    const noopStorage = { getItem: () => null, setItem: () => {}, removeItem: () => {} };
+    _publicClient = globalThis.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+      auth: {
+        autoRefreshToken: false, persistSession: false, detectSessionInUrl: false,
+        storage: noopStorage, storageKey: 'sb-public-anon',
+      },
+    });
+  }
+  return _publicClient;
 }
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
@@ -152,7 +172,7 @@ export async function acceptPolicy() {
  * @param {{ nsfw?: boolean, page?: number, pageSize?: number }} opts
  */
 export async function listPublicCampaigns({ nsfw = false, page = 0, pageSize = 24 } = {}) {
-  let query = getClient()
+  let query = getPublicClient()
     .from('campaigns')
     .select(`
       id, title, description, zip_url, is_nsfw, features, upvote_count, created_at, updated_at,
