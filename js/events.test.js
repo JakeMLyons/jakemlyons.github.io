@@ -186,24 +186,22 @@ describe('applyNoteGrants()', () => {
 describe('applyAttributeEffects()', () => {
   it('applies a negative delta (damage)', () => {
     const state = makeState({ attributes: { health: 100 } });
-    const { newState, died } = applyAttributeEffects(
+    const { newState } = applyAttributeEffects(
       { affect_attributes: { health: -10 } },
       state,
       makeCampaign()
     );
     assert.equal(newState.attributes.health, 90);
-    assert.equal(died, false);
   });
 
   it('applies a positive delta (heal)', () => {
     const state = makeState({ attributes: { health: 80 } });
-    const { newState, died } = applyAttributeEffects(
+    const { newState } = applyAttributeEffects(
       { affect_attributes: { health: 10 } },
       state,
       makeCampaign()
     );
     assert.equal(newState.attributes.health, 90);
-    assert.equal(died, false);
   });
 
   it('clamps value at max', () => {
@@ -216,45 +214,30 @@ describe('applyAttributeEffects()', () => {
     assert.equal(newState.attributes.health, 100);
   });
 
-  it('clamps value at min and sets died=true', () => {
+  it('clamps value at min', () => {
     const state = makeState({ attributes: { health: 5 } });
-    const { newState, died, deathMessage } = applyAttributeEffects(
+    const { newState } = applyAttributeEffects(
       { affect_attributes: { health: -20 } },
       state,
       makeCampaign({ health: { value: 100, min: 0, max: 100 } })
     );
     assert.equal(newState.attributes.health, 0);
-    assert.equal(died, true);
-    assert.equal(deathMessage, null); // no min_message defined
-  });
-
-  it('uses min_message as deathMessage when defined', () => {
-    const state = makeState({ attributes: { health: 1 } });
-    const { died, deathMessage } = applyAttributeEffects(
-      { affect_attributes: { health: -100 } },
-      state,
-      makeCampaign({ health: { value: 100, min: 0, min_message: 'You have perished.' } })
-    );
-    assert.equal(died, true);
-    assert.equal(deathMessage, 'You have perished.');
   });
 
   it('no-ops when affect_attributes is absent', () => {
     const state = makeState({ attributes: { health: 50 } });
-    const { newState, died } = applyAttributeEffects({}, state, makeCampaign());
+    const { newState } = applyAttributeEffects({}, state, makeCampaign());
     assert.equal(newState.attributes.health, 50);
-    assert.equal(died, false);
   });
 
   it('silently skips unknown attributes', () => {
     const state = makeState({ attributes: {} });
-    const { newState, died } = applyAttributeEffects(
+    const { newState } = applyAttributeEffects(
       { affect_attributes: { health: -10 } },
       state,
       {}
     );
     assert.deepEqual(newState.attributes, {});
-    assert.equal(died, false);
   });
 
   it('coerces string delta values', () => {
@@ -267,37 +250,75 @@ describe('applyAttributeEffects()', () => {
     assert.equal(newState.attributes.health, 95);
   });
 
-  it('always returns empty messages array', () => {
-    const state = makeState({ attributes: { health: 100 } });
-    const { messages } = applyAttributeEffects(
-      { affect_attributes: { health: -10 } },
-      state,
-      makeCampaign()
-    );
-    assert.deepEqual(messages, []);
-  });
-
   it('does not mutate input state', () => {
     const state = makeState({ attributes: { health: 100 } });
     applyAttributeEffects({ affect_attributes: { health: -10 } }, state, makeCampaign());
     assert.equal(state.attributes.health, 100);
   });
 
-  it('returns triggerScene when min_scene is defined', () => {
+  it('pushes condition message when condition is met', () => {
     const state = makeState({ attributes: { health: 5 } });
-    const campaign = makeCampaign({ health: { value: 100, min: 0, max: 100, min_scene: 'death_scene' } });
-    const { triggerScene, died } = applyAttributeEffects(
+    const campaign = makeCampaign({ health: { value: 100, min: 0, conditions: [{ when: '<= 0', message: 'Critically wounded.' }] } });
+    const { messages, newState } = applyAttributeEffects(
+      { affect_attributes: { health: -20 } },
+      state,
+      campaign
+    );
+    assert.equal(newState.attributes.health, 0);
+    assert.deepEqual(messages, ['Critically wounded.']);
+  });
+
+  it('sets triggerScene from condition when matched', () => {
+    const state = makeState({ attributes: { health: 5 } });
+    const campaign = makeCampaign({ health: { value: 100, min: 0, conditions: [{ when: '<= 0', scene: 'game_over' }] } });
+    const { triggerScene } = applyAttributeEffects(
+      { affect_attributes: { health: -20 } },
+      state,
+      campaign
+    );
+    assert.equal(triggerScene, 'game_over');
+  });
+
+  it('fires first matching condition only (skips subsequent)', () => {
+    const state = makeState({ attributes: { health: 5 } });
+    const campaign = makeCampaign({ health: { value: 100, min: 0, conditions: [
+      { when: '<= 0', message: 'Defeated.' },
+      { when: '<= 10', message: 'Should not fire.' },
+    ] } });
+    const { messages } = applyAttributeEffects(
+      { affect_attributes: { health: -20 } },
+      state,
+      campaign
+    );
+    assert.deepEqual(messages, ['Defeated.']);
+  });
+
+  it('condition does not fire when expression is false', () => {
+    const state = makeState({ attributes: { health: 50 } });
+    const campaign = makeCampaign({ health: { value: 100, conditions: [{ when: '<= 0', message: 'Defeated.' }] } });
+    const { messages, triggerScene } = applyAttributeEffects(
+      { affect_attributes: { health: -10 } },
+      state,
+      campaign
+    );
+    assert.deepEqual(messages, []);
+    assert.equal(triggerScene, null);
+  });
+
+  it('returns triggerScene from condition.scene', () => {
+    const state = makeState({ attributes: { health: 5 } });
+    const campaign = makeCampaign({ health: { value: 100, min: 0, conditions: [{ when: '<= 0', scene: 'death_scene' }] } });
+    const { triggerScene } = applyAttributeEffects(
       { affect_attributes: { health: -20 } },
       state,
       campaign
     );
     assert.equal(triggerScene, 'death_scene');
-    assert.equal(died, false);
   });
 
-  it('returns triggerScene for max_scene when max is reached', () => {
+  it('returns triggerScene from condition on upper threshold', () => {
     const state = makeState({ attributes: { power: 8 } });
-    const campaign = makeCampaign({ power: { value: 0, max: 10, max_scene: 'ascend' } });
+    const campaign = makeCampaign({ power: { value: 0, max: 10, conditions: [{ when: '>= 10', scene: 'ascend' }] } });
     const { triggerScene } = applyAttributeEffects(
       { affect_attributes: { power: 5 } },
       state,
@@ -306,7 +327,7 @@ describe('applyAttributeEffects()', () => {
     assert.equal(triggerScene, 'ascend');
   });
 
-  it('returns null triggerScene when no boundary scenes defined', () => {
+  it('returns null triggerScene when no conditions defined', () => {
     const state = makeState({ attributes: { health: 100 } });
     const { triggerScene } = applyAttributeEffects(
       { affect_attributes: { health: -10 } },

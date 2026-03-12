@@ -104,25 +104,10 @@ export class GameEngine {
 
     // 4. Boundary check after choice effects
     if (result.triggerScene) {
-      // Attribute boundary → redirect to linked scene instead of choice.next
+      // Attribute condition → redirect to linked scene instead of choice.next
       const nextState = state.copy();
       nextState.sceneId = result.triggerScene;
       return this._enterScene(nextState, messages, choiceSfx);
-    }
-    if (result.died) {
-      const currentScene = this._scenes[state.sceneId];
-      const currentAssets = this._resolveAssets(currentScene.assets ?? null);
-      return new GameOutput({
-        state,
-        sceneText: '',
-        choices: [],
-        messages,
-        isTerminal: true,
-        terminalReason: 'death',
-        deathMessage: result.deathMessage,
-        assets: currentAssets,
-        sfx: choiceSfx,
-      });
     }
 
     // 5. Advance to the next scene
@@ -160,24 +145,11 @@ export class GameEngine {
 
     // 6.5 Boundary check after on_enter effects
     if (result.triggerScene) {
-      // Attribute boundary → redirect to linked scene (cap at one redirect per turn)
+      // Attribute condition → redirect to linked scene (cap at one redirect per turn)
       const redirectState = state.copy();
       redirectState.visited.push(state.sceneId); // record this scene before redirecting
       redirectState.sceneId = result.triggerScene;
       return this._enterScene(redirectState, messages, allSfx);
-    }
-    if (result.died) {
-      return new GameOutput({
-        state,
-        sceneText: scene.text,
-        choices: [],
-        messages,
-        isTerminal: true,
-        terminalReason: 'death',
-        deathMessage: result.deathMessage,
-        assets: sceneAssets,
-        sfx: allSfx,
-      });
     }
 
     // 6.6 Auto-fire recipes after on_enter item changes

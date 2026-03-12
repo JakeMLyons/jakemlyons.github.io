@@ -139,7 +139,6 @@ describe('GameOutput constructor', () => {
     assert.deepEqual(o.messages, []);
     assert.equal(o.isTerminal, false);
     assert.equal(o.terminalReason, null);
-    assert.equal(o.deathMessage, null);
     assert.equal(o.noChoices, false);
   });
 });

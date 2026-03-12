@@ -241,11 +241,21 @@ export function validateCampaign(campaign) {
     if (def.min != null && def.max != null && Number(def.min) >= Number(def.max)) {
       warn(`Attribute '${attrName}': min (${def.min}) is >= max (${def.max}).`);
     }
-    if (def.min_scene && !(def.min_scene in scenes)) {
-      err(`Attribute '${attrName}': min_scene refers to unknown scene '${def.min_scene}'.`);
-    }
-    if (def.max_scene && !(def.max_scene in scenes)) {
-      err(`Attribute '${attrName}': max_scene refers to unknown scene '${def.max_scene}'.`);
+    for (let i = 0; i < (def.conditions ?? []).length; i++) {
+      const cond = def.conditions[i];
+      const prefix = `Attribute '${attrName}' condition[${i}]`;
+      if (!cond.when) {
+        err(`${prefix}: missing 'when' field.`);
+      } else {
+        const validWhen = /^(<=|>=|<|>|=|!=)\s*-?\d+(?:\.\d+)?$/.test(String(cond.when).trim());
+        if (!validWhen) warn(`${prefix}: 'when' value "${cond.when}" is not a valid condition (e.g. "<= 0").`);
+      }
+      if (!cond.scene && !cond.message) {
+        warn(`${prefix}: has neither 'scene' nor 'message' — it will have no effect.`);
+      }
+      if (cond.scene && !(cond.scene in scenes)) {
+        err(`${prefix}: 'scene' refers to unknown scene '${cond.scene}'.`);
+      }
     }
   }
 
@@ -396,10 +406,11 @@ export function validateCampaign(campaign) {
   if (start && start in scenes) {
     const reachable = new Set();
     const queue = [start];
-    // min_scene / max_scene are reachable via attribute thresholds, not choice links
+    // Condition scenes are reachable via attribute thresholds, not choice links
     for (const def of Object.values(attrDefs)) {
-      if (def.min_scene) queue.push(def.min_scene);
-      if (def.max_scene) queue.push(def.max_scene);
+      for (const cond of def.conditions ?? []) {
+        if (cond.scene) queue.push(cond.scene);
+      }
     }
     while (queue.length > 0) {
       const sid = queue.pop();

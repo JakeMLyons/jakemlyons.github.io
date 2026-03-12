@@ -123,25 +123,39 @@ describe('validateCampaign()', () => {
     assert.ok(!warnings.some((r) => r.message.includes("item 'magic orb'")));
   });
 
-  it('reports error for min_scene referencing unknown scene', () => {
+  it('reports error for condition.scene referencing unknown scene', () => {
     const campaign = makeMinimalCampaign();
-    campaign.attributes = { health: { value: 100, min: 0, min_scene: 'ghost_scene' } };
+    campaign.attributes = { health: { value: 100, min: 0, conditions: [{ when: '<= 0', scene: 'ghost_scene' }] } };
     const errors = validateCampaign(campaign).filter((r) => r.level === 'error');
-    assert.ok(errors.some((r) => r.message.includes("min_scene") && r.message.includes("'ghost_scene'")));
+    assert.ok(errors.some((r) => r.message.includes("'ghost_scene'")));
   });
 
-  it('reports error for max_scene referencing unknown scene', () => {
+  it('no error when condition.scene references a valid scene', () => {
     const campaign = makeMinimalCampaign();
-    campaign.attributes = { power: { value: 0, max: 10, max_scene: 'ghost_scene' } };
+    campaign.attributes = { health: { value: 100, min: 0, conditions: [{ when: '<= 0', scene: 'end' }] } };
     const errors = validateCampaign(campaign).filter((r) => r.level === 'error');
-    assert.ok(errors.some((r) => r.message.includes("max_scene") && r.message.includes("'ghost_scene'")));
+    assert.ok(!errors.some((r) => r.message.includes('condition')));
   });
 
-  it('no error when min_scene/max_scene reference valid scenes', () => {
+  it('warns on condition missing both scene and message', () => {
     const campaign = makeMinimalCampaign();
-    campaign.attributes = { health: { value: 100, min: 0, min_scene: 'end' } };
+    campaign.attributes = { health: { value: 100, conditions: [{ when: '<= 0' }] } };
+    const warnings = validateCampaign(campaign).filter((r) => r.level === 'warning');
+    assert.ok(warnings.some((r) => r.message.includes('no effect')));
+  });
+
+  it('warns on condition with invalid when format', () => {
+    const campaign = makeMinimalCampaign();
+    campaign.attributes = { health: { value: 100, conditions: [{ when: 'bad', message: 'oops' }] } };
+    const warnings = validateCampaign(campaign).filter((r) => r.level === 'warning');
+    assert.ok(warnings.some((r) => r.message.includes('valid condition')));
+  });
+
+  it('errors on condition missing when field', () => {
+    const campaign = makeMinimalCampaign();
+    campaign.attributes = { health: { value: 100, conditions: [{ message: 'oops' }] } };
     const errors = validateCampaign(campaign).filter((r) => r.level === 'error');
-    assert.ok(!errors.some((r) => r.message.includes('min_scene')));
+    assert.ok(errors.some((r) => r.message.includes("missing 'when'")));
   });
 });
 

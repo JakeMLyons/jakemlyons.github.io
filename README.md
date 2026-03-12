@@ -25,7 +25,7 @@ Switch to the **Community** tab to browse published campaigns. Click any card to
 
 When a scene loads, you'll see story text followed by a list of choices. Click a choice to advance. Some choices only appear if you're carrying the right item — explore carefully and pick things up when you can.
 
-In campaigns that track attributes like health, certain choices or locations can change those values. If a stat reaches its minimum value (e.g. health hits 0), the game ends.
+In campaigns that track attributes like health, certain choices or locations can change those values. If an attribute reaches a threshold defined by the campaign author, it can trigger a scene redirect or show a notification message — the exact behaviour depends on the campaign's `conditions` settings.
 
 ### The HUD sidebar
 
@@ -136,11 +136,6 @@ metadata:
   title: "My Adventure"
   description: "A short description."
   start: begin
-  attributes:          # optional — omit entirely if you don't need stat tracking
-    health:
-      value: 20        # starting value
-      min: 0           # reaching this ends the game
-      label: "Health"
   inventory: []
 ```
 
@@ -192,8 +187,6 @@ items:
   lantern:
     description: "A tin lantern with a cracked glass panel."
     icon: "lantern_icon"          # optional — shown in inventory
-    affect_attributes:
-      carry_weight: 3
 ```
 
 **Key rules:**
@@ -208,6 +201,79 @@ items:
 - `affect_attributes` on a choice applies numeric deltas to named attributes. If any attribute reaches its declared `min`, the game ends before entering the next scene.
 - `on_enter` on a scene fires automatically on arrival — useful for traps, automatic discoveries, and environmental effects. It also supports `affect_attributes`.
 - Omitting the `attributes:` block in `metadata.yaml` disables all stat tracking for the entire campaign.
+
+
+### Attributes
+
+Attributes let you track player stats such as health, sanity, carry weight, or any value the campaign needs. Define them in `metadata.yaml` — omit the block entirely if you don't need stat tracking.
+
+```yaml
+attributes:
+  health:
+    value: 20              # required — starting value
+    min: 0                 # optional — clamps value at floor (never goes below 0)
+    max: 100               # optional — caps upward free changes (e.g. healing)
+    label: "Health"        # optional — HUD display label (defaults to key name)
+    conditions:            # optional — trigger behaviours when the value matches
+      - when: "<= 0"
+        scene: death_scene          # redirect to this scene when health reaches 0
+      - when: "<= 25"
+        message: "You are critically wounded."  # shown as a notification message
+  carry_weight:
+    value: 0               # starts at 0; accumulates as items are picked up
+    max: 20                # informational — shown as value/max in the HUD
+    label: "Carry Weight"
+```
+
+**Changing attribute values** — use `affect_attributes` with numeric deltas:
+
+```yaml
+scenes: # On a choice — applied before entering the next scene:
+  begin:
+    text: "You wake up in a strange room and see a potion on a table."
+    choices:
+      - label: "Drink the potion"
+        next: drank_potion
+        affect_attributes:
+          health: 10
+      - label: "Look around"
+        next: look
+      - label: "Go back to sleep"
+        next: sleep_end
+```
+
+```yaml
+scenes: # On on_enter — fires automatically on every arrival:
+  begin:
+    text: "You wake up in a strange room with a sharp pain in your side."
+    on_enter:
+      affect_attributes:
+        health: -2
+        sanity: -1
+    choices:
+      - label: "Look around"
+        next: look
+      - label: "Go back to sleep"
+        next: sleep_end
+```
+
+**Items and attributes** — an item can declare `affect_attributes` in the `items:` registry. Those deltas are applied when the item enters or leaves the inventory:
+
+```yaml
+items:
+  heavy tome:
+    description: "A thick leather-bound volume."
+    affect_attributes:
+      carry_weight: 4    # added on pickup, subtracted on removal
+```
+
+**Key rules for attributes:**
+
+- `min` and `max` clamp the value — `min` prevents it going below the floor, `max` caps upward changes (e.g. healing cannot exceed max health). Neither triggers any behaviour on its own.
+- `conditions` define what happens when a clamped value matches a threshold. Each condition needs a `when` expression (e.g. `"<= 0"`, `">= 5"`) and at least one of `scene` (redirect) or `message` (notification). Conditions are evaluated after clamping, in definition order — the first match wins.
+- Item pickup/removal clamps to `[min, max]` but never evaluates conditions.
+- Omitting `attributes:` entirely hides the Attributes HUD panel and disables all stat tracking.
+
 
 ### Assets (images, music, sound effects)
 

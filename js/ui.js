@@ -343,30 +343,23 @@ function renderChoicesOrTerminal(output) {
   sceneChoices.innerHTML = '';
 
   if (output.isTerminal) {
-    if (output.sceneText || output.terminalReason === 'end') {
-      // Scene text already rendered above; add terminal message + play again
-      const term = document.createElement('div');
-      term.className = 'scene-panel__terminal' +
-        (output.terminalReason === 'death' ? ' scene-panel__terminal--death' : '');
+    // Scene text already rendered above; add terminal message + play again
+    const term = document.createElement('div');
+    term.className = 'scene-panel__terminal';
 
-      const msg = document.createElement('p');
-      if (output.terminalReason === 'end') {
-        msg.textContent = 'The End.';
-      } else {
-        msg.textContent = output.deathMessage ?? 'You have died.';
-      }
-      term.appendChild(msg);
+    const msg = document.createElement('p');
+    msg.textContent = 'The End.';
+    term.appendChild(msg);
 
-      const btn = document.createElement('button');
-      btn.className = 'btn';
-      btn.textContent = 'Play Again';
-      btn.addEventListener('click', () => {
-        journalAutoExpanded = false;
-        renderOutput(engine.start());
-      });
-      term.appendChild(btn);
-      sceneChoices.appendChild(term);
-    }
+    const btn = document.createElement('button');
+    btn.className = 'btn';
+    btn.textContent = 'Play Again';
+    btn.addEventListener('click', () => {
+      journalAutoExpanded = false;
+      renderOutput(engine.start());
+    });
+    term.appendChild(btn);
+    sceneChoices.appendChild(term);
     return;
   }
 

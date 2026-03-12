@@ -51,13 +51,13 @@ describe('GameEngine.start()', () => {
     assert.deepEqual(output.state.visited, ['start']);
   });
 
-  it('performs death check: starting scene with lethal on_enter damage', () => {
+  it('lethal on_enter damage with no condition just clamps health and continues', () => {
     const campaign = makeCampaign();
     campaign.scenes.start.on_enter = { affect_attributes: { health: -200 } };
     const engine = new GameEngine(campaign);
     const output = engine.start();
-    assert.equal(output.isTerminal, true);
-    assert.equal(output.terminalReason, 'death');
+    assert.equal(output.isTerminal, false);
+    assert.equal(output.state.attributes.health, 0);
   });
 
   it('resumes from initialState at the correct scene', () => {
@@ -170,97 +170,60 @@ describe('Item grants and gates', () => {
   });
 });
 
-// ─── Death handling ───────────────────────────────────────────────────────────
+// ─── Attribute conditions ─────────────────────────────────────────────────────
 
-describe('Death handling', () => {
-  it('death from choice: sceneText is ""', () => {
+describe('Attribute conditions', () => {
+  it('no condition: lethal damage just clamps health and advances to next scene', () => {
     const campaign = makeCampaign();
     campaign.scenes.start.choices = [
-      { label: 'Walk into lava', next: 'lava', affect_attributes: { health: -200 } },
+      { label: 'Take damage', next: 'forest', affect_attributes: { health: -200 } },
     ];
-    campaign.scenes.lava = { text: 'Lava scene.', end: true };
     const engine = new GameEngine(campaign);
     const s1 = engine.start();
     const s2 = engine.step(s1.state, '1');
-    assert.equal(s2.isTerminal, true);
-    assert.equal(s2.terminalReason, 'death');
-    assert.equal(s2.sceneText, '');
-  });
-
-  it('death from on_enter: sceneText is scene.text', () => {
-    const campaign = makeCampaign();
-    campaign.scenes.forest.on_enter = { affect_attributes: { health: -200 } };
-    const engine = new GameEngine(campaign);
-    const s1 = engine.start();
-    const s2 = engine.step(s1.state, '1');
-    assert.equal(s2.isTerminal, true);
-    assert.equal(s2.terminalReason, 'death');
+    assert.equal(s2.isTerminal, false);
+    assert.equal(s2.state.attributes.health, 0);
     assert.equal(s2.sceneText, 'You are in the forest.');
   });
-});
 
-// ─── Scene-linked boundaries ──────────────────────────────────────────────────
-
-describe('Scene-linked boundaries', () => {
-  it('min_scene redirects to linked scene instead of death', () => {
+  it('condition scene redirects instead of advancing to choice.next', () => {
     const campaign = makeCampaign({
-      attributes: { health: { value: 100, min: 0, min_scene: 'death_scene' } },
+      attributes: { health: { value: 100, min: 0, conditions: [{ when: '<= 0', scene: 'game_over' }] } },
       scenes: {
         start: {
           text: 'Start.',
           choices: [{ label: 'Die', next: 'forest', affect_attributes: { health: -200 } }],
         },
         forest: { text: 'Forest.', end: true },
-        death_scene: { text: 'You collapsed.', end: true },
+        game_over: { text: 'You collapsed.', end: true },
       },
     });
     const engine = new GameEngine(campaign);
     const s1 = engine.start();
     const s2 = engine.step(s1.state, '1');
-    // Should redirect to death_scene, not show 'death' terminalReason
     assert.equal(s2.sceneText, 'You collapsed.');
     assert.equal(s2.isTerminal, true);
-    assert.equal(s2.terminalReason, 'end'); // end: true on the scene
-    assert.equal(s2.state.sceneId, 'death_scene');
+    assert.equal(s2.terminalReason, 'end');
+    assert.equal(s2.state.sceneId, 'game_over');
   });
 
-  it('min without min_scene still triggers old-style death', () => {
+  it('condition message appears in messages when threshold reached', () => {
     const campaign = makeCampaign({
-      attributes: { health: { value: 100, min: 0, min_message: 'You died.' } },
+      attributes: { health: { value: 100, min: 0, conditions: [{ when: '<= 0', message: 'You are defeated.' }] } },
     });
     campaign.scenes.start.choices = [
-      { label: 'Die', next: 'forest', affect_attributes: { health: -200 } },
+      { label: 'Take damage', next: 'forest', affect_attributes: { health: -200 } },
     ];
     const engine = new GameEngine(campaign);
     const s1 = engine.start();
     const s2 = engine.step(s1.state, '1');
-    assert.equal(s2.isTerminal, true);
-    assert.equal(s2.terminalReason, 'death');
-    assert.equal(s2.deathMessage, 'You died.');
+    assert.equal(s2.isTerminal, false);
+    assert.ok(s2.messages.includes('You are defeated.'));
   });
 
-  it('max_scene redirects when max is reached', () => {
+  it('on_enter condition redirect works', () => {
     const campaign = makeCampaign({
-      attributes: { power: { value: 5, max: 10, max_scene: 'ascend' } },
-      scenes: {
-        start: {
-          text: 'Start.',
-          choices: [{ label: 'Power up', next: 'forest', affect_attributes: { power: 10 } }],
-        },
-        forest: { text: 'Forest.', end: true },
-        ascend: { text: 'You ascended.', end: true },
-      },
-    });
-    const engine = new GameEngine(campaign);
-    const s1 = engine.start();
-    const s2 = engine.step(s1.state, '1');
-    assert.equal(s2.sceneText, 'You ascended.');
-    assert.equal(s2.state.sceneId, 'ascend');
-  });
-
-  it('on_enter min_scene redirect works', () => {
-    const campaign = makeCampaign({
-      attributes: { health: { value: 100, min: 0, min_scene: 'dead_end' } },
+      attributes: { health: { value: 100, min: 0, conditions: [{ when: '<= 0', scene: 'dead_end' }] } },
       scenes: {
         start: {
           text: 'Start.',
@@ -281,9 +244,9 @@ describe('Scene-linked boundaries', () => {
     assert.equal(s2.state.sceneId, 'dead_end');
   });
 
-  it('min_scene target can be a non-terminal scene with choices', () => {
+  it('condition target can be a non-terminal scene with choices', () => {
     const campaign = makeCampaign({
-      attributes: { health: { value: 100, min: 0, min_scene: 'revival' } },
+      attributes: { health: { value: 100, min: 0, conditions: [{ when: '<= 0', scene: 'revival' }] } },
       scenes: {
         start: {
           text: 'Start.',
@@ -302,6 +265,25 @@ describe('Scene-linked boundaries', () => {
     assert.equal(s2.sceneText, 'You awaken somewhere new.');
     assert.equal(s2.isTerminal, false);
     assert.deepEqual(s2.choices, ['Continue']);
+  });
+
+  it('upper-bound condition redirects when max is reached', () => {
+    const campaign = makeCampaign({
+      attributes: { power: { value: 5, max: 10, conditions: [{ when: '>= 10', scene: 'ascend' }] } },
+      scenes: {
+        start: {
+          text: 'Start.',
+          choices: [{ label: 'Power up', next: 'forest', affect_attributes: { power: 10 } }],
+        },
+        forest: { text: 'Forest.', end: true },
+        ascend: { text: 'You ascended.', end: true },
+      },
+    });
+    const engine = new GameEngine(campaign);
+    const s1 = engine.start();
+    const s2 = engine.step(s1.state, '1');
+    assert.equal(s2.sceneText, 'You ascended.');
+    assert.equal(s2.state.sceneId, 'ascend');
   });
 });
 
@@ -550,34 +532,6 @@ describe('Assets — all GameOutput paths carry assets', () => {
     const s2 = engine.step(s1.state, '1');
     assert.equal(s2.isTerminal, true);
     assert.equal(s2.terminalReason, 'end');
-    assert.equal(s2.assets.image, 'assets/shore.jpg');
-  });
-
-  it('death from on_enter carries new scene assets', () => {
-    const campaign = makeCampaignWithAssets();
-    campaign.attributes = { health: { value: 100, min: 0 } };
-    campaign.scenes.forest.on_enter = { affect_attributes: { health: -200 } };
-    campaign.scenes.forest.assets = { image: 'shore_img' };
-    const engine = new GameEngine(campaign);
-    const s1 = engine.start();
-    const s2 = engine.step(s1.state, '1');
-    assert.equal(s2.isTerminal, true);
-    assert.equal(s2.terminalReason, 'death');
-    assert.equal(s2.assets.image, 'assets/shore.jpg');
-  });
-
-  it('death from choice carries current scene assets', () => {
-    const campaign = makeCampaignWithAssets();
-    campaign.attributes = { health: { value: 100, min: 0 } };
-    campaign.scenes.start.choices = [
-      { label: 'Die', next: 'forest', affect_attributes: { health: -200 } },
-    ];
-    // start scene already has assets: { image: 'shore_img', music: 'calm_music' }
-    const engine = new GameEngine(campaign);
-    const s1 = engine.start();
-    const s2 = engine.step(s1.state, '1');
-    assert.equal(s2.isTerminal, true);
-    assert.equal(s2.terminalReason, 'death');
     assert.equal(s2.assets.image, 'assets/shore.jpg');
   });
 
