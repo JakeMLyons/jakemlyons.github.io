@@ -7,7 +7,7 @@
  *
  * items shape:      { name: { description: string, affect_attributes: object } }
  * assets shape:     { images: { key: url }, music: { key: url }, sfx: { key: url } }
- * attributes shape: { name: { value, min?, max?, min_message?, min_scene?, max_scene?, label? } }
+ * attributes shape: { name: { value, min?, max?, label?, is_hidden?, conditions?: [{when, scene?, message?}] } }
  * assetsInMetadata: boolean — true if metadata.yaml contained a top-level `assets:` block (should be a warning)
  *
  * validateCampaign() returns an array of { level: 'error'|'warning', message }

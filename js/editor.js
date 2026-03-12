@@ -31,8 +31,6 @@ let campaign = null;        // Visual mode source of truth: { metadata, scenes, 
 let activeFile  = null;     // selected filename in file tree (Code mode)
 let activeScene = null;     // selected scene ID in visual editor
 let mode = 'code';          // 'code' | 'form' | 'visual'
-let codeEdited = false;     // user has typed in Code mode this session
-let warningAcknowledged = false; // round-trip warning dialog dismissed
 let isDirty = false;        // unsaved changes since last ZIP export or campaign load
 let sceneFileMap = new Map();    // sceneId → filename (for validation navigation)
 let pendingValidation = [];      // last validateCampaign() results
@@ -177,11 +175,6 @@ const edRenameConfirm = document.getElementById('ed-rename-confirm');
 const edRenameCancel  = document.getElementById('ed-rename-cancel');
 const edRenameCancel2 = document.getElementById('ed-rename-cancel-2');
 
-// Mode-switch dialog
-const edSwitchDialog  = document.getElementById('ed-switch-dialog');
-const edSwitchConfirm = document.getElementById('ed-switch-confirm');
-const edSwitchCancel  = document.getElementById('ed-switch-cancel');
-
 // Toast
 const edToast = document.getElementById('ed-toast');
 
@@ -281,8 +274,6 @@ function receiveCampaignData(campaignObj, name, files) {
   } else {
     fileMap = serialiseCampaign(campaignObj, null);
   }
-  codeEdited = false;
-  warningAcknowledged = false;
   activeScene = null;
   mode = 'code';
   buildSceneFileMap();
@@ -313,8 +304,6 @@ async function loadFromFiles(files) {
     fileMap.set(filename, text);
   }
   localStorage.removeItem('adventure_editor_draft');
-  codeEdited = false;
-  warningAcknowledged = false;
   activeScene = null;
   mode = 'code';
   buildSceneFileMap();
@@ -353,8 +342,6 @@ function initNewCampaign() {
     items: {},
   };
 
-  codeEdited = false;
-  warningAcknowledged = false;
   activeScene = null;
   mode = 'code';
   buildSceneFileMap();
@@ -624,18 +611,23 @@ function wireModeToggle() {
   });
 }
 
+// Flush any pending textarea edit to fileMap before switching away from Code mode.
+// onTextareaInput is debounced, so a fast click could leave fileMap stale.
+function flushTextarea() {
+  if (activeFile) {
+    const text = edTextarea.value;
+    fileMap.set(activeFile, text);
+    checkParseError(text);
+  }
+}
+
 async function attemptSwitchToForm() {
+  flushTextarea();
+
   // Block if parse errors exist
   if (!edParseError.classList.contains('hidden')) {
     showToast('Fix parse errors before switching to Form mode.');
     return;
-  }
-
-  // Warn if user has hand-authored YAML that would be lost on round-trip
-  if (codeEdited && !warningAcknowledged) {
-    const confirmed = await showSwitchWarning();
-    if (!confirmed) return;
-    warningAcknowledged = true;
   }
 
   try {
@@ -651,17 +643,12 @@ async function attemptSwitchToForm() {
 }
 
 async function attemptSwitchToVisual() {
+  flushTextarea();
+
   // Block if parse errors exist
   if (!edParseError.classList.contains('hidden')) {
     showToast('Fix parse errors before switching to Visual mode.');
     return;
-  }
-
-  // Warn if user has hand-authored YAML that would be lost on round-trip
-  if (codeEdited && !warningAcknowledged) {
-    const confirmed = await showSwitchWarning();
-    if (!confirmed) return;
-    warningAcknowledged = true;
   }
 
   try {
@@ -792,7 +779,6 @@ const onTextareaInput = debounce(() => {
   if (!activeFile) return;
   const text = edTextarea.value;
   fileMap.set(activeFile, text);
-  codeEdited = true;
   markDirty();
   checkParseError(text);
   buildSceneFileMap();
@@ -2751,6 +2737,118 @@ function buildAttributeCard(attrName, attrDef) {
   });
 
   card.appendChild(grid);
+
+  // ─── Conditions section ─────────────────────────────────────────────────────
+  const COND_OPS = ['<=', '>=', '<', '>', '=', '!='];
+
+  const condSection = document.createElement('div');
+  condSection.className = 'ed-attr-card__conditions';
+
+  const condHdr = document.createElement('div');
+  condHdr.className = 'ed-attr-card__conditions-hdr';
+  const condLbl = document.createElement('span');
+  condLbl.className = 'ed-label';
+  condLbl.textContent = 'Conditions';
+  const condAddBtn = document.createElement('button');
+  condAddBtn.type = 'button';
+  condAddBtn.className = 'btn btn--ghost btn--small';
+  condAddBtn.textContent = '+ Add condition';
+  condHdr.appendChild(condLbl);
+  condHdr.appendChild(condAddBtn);
+  condSection.appendChild(condHdr);
+
+  const condList = document.createElement('div');
+  condList.className = 'ed-attr-card__cond-list';
+  condSection.appendChild(condList);
+
+  function refreshAttrConditions() {
+    condList.innerHTML = '';
+    const conds = attrDef.conditions ?? [];
+    for (let ci = 0; ci < conds.length; ci++) {
+      const cond = conds[ci];
+      const row = document.createElement('div');
+      row.className = 'ed-attr-cond-row';
+
+      // Parse `when` string into op + number
+      const m = String(cond.when ?? '<= 0').trim().match(/^(<=|>=|<|>|=|!=)\s*(-?\d+(?:\.\d+)?)$/);
+      const op0 = m ? m[1] : '<=';
+      const val0 = m ? m[2] : '0';
+
+      const opSel = document.createElement('select');
+      opSel.className = 'ed-input ed-attr-cond-row__op';
+      for (const op of COND_OPS) {
+        const opt = document.createElement('option');
+        opt.value = op; opt.textContent = op;
+        opt.selected = op === op0;
+        opSel.appendChild(opt);
+      }
+
+      const valInput = makeInput('number', val0, '0');
+      valInput.className += ' ed-attr-cond-row__val';
+
+      function updateWhen() {
+        cond.when = `${opSel.value} ${valInput.value !== '' ? valInput.value : '0'}`;
+        markDirty(); scheduleValidation();
+      }
+      opSel.addEventListener('change', updateWhen);
+      valInput.addEventListener('input', updateWhen);
+
+      // Scene redirect (optional)
+      const sceneSelect = document.createElement('select');
+      sceneSelect.className = 'ed-select ed-attr-cond-row__scene';
+      const blankSceneOpt = document.createElement('option');
+      blankSceneOpt.value = '';
+      blankSceneOpt.textContent = '(no redirect)';
+      sceneSelect.appendChild(blankSceneOpt);
+      for (const sid of Object.keys(campaign.scenes ?? {})) {
+        const opt = document.createElement('option');
+        opt.value = sid; opt.textContent = sid;
+        sceneSelect.appendChild(opt);
+      }
+      sceneSelect.value = cond.scene ?? '';
+      sceneSelect.addEventListener('change', () => {
+        cond.scene = sceneSelect.value || undefined;
+        markDirty(); scheduleValidation();
+      });
+
+      // Message (optional)
+      const msgInput = makeInput('text', cond.message ?? '', 'Message (optional)');
+      msgInput.className += ' ed-attr-cond-row__msg';
+      msgInput.addEventListener('input', () => {
+        cond.message = msgInput.value || undefined;
+        markDirty(); scheduleValidation();
+      });
+
+      const rmBtn = document.createElement('button');
+      rmBtn.type = 'button';
+      rmBtn.className = 'ed-attr-card__delete';
+      rmBtn.textContent = '✕';
+      rmBtn.title = 'Remove condition';
+      rmBtn.addEventListener('click', () => {
+        attrDef.conditions.splice(ci, 1);
+        if (!attrDef.conditions.length) delete attrDef.conditions;
+        markDirty(); scheduleValidation();
+        refreshAttrConditions();
+      });
+
+      row.appendChild(opSel);
+      row.appendChild(valInput);
+      row.appendChild(sceneSelect);
+      row.appendChild(msgInput);
+      row.appendChild(rmBtn);
+      condList.appendChild(row);
+    }
+  }
+
+  condAddBtn.addEventListener('click', () => {
+    if (!attrDef.conditions) attrDef.conditions = [];
+    attrDef.conditions.push({ when: '<= 0' });
+    markDirty(); scheduleValidation();
+    refreshAttrConditions();
+  });
+
+  refreshAttrConditions();
+  card.appendChild(condSection);
   return card;
 }
 
@@ -3470,8 +3568,6 @@ function wireModals() {
     if (e.key === 'Escape') edRenameCancel.click();
   });
 
-  edSwitchConfirm.addEventListener('click', () => edSwitchDialog.close('confirm'));
-  edSwitchCancel.addEventListener('click', () => edSwitchDialog.close('cancel'));
 }
 
 function openRenameModal() {
@@ -3486,15 +3582,6 @@ function openRenameModal() {
 function showRenameError(msg) {
   edRenameError.textContent = msg;
   edRenameError.classList.remove('hidden');
-}
-
-function showSwitchWarning() {
-  return new Promise((resolve) => {
-    edSwitchDialog.showModal();
-    edSwitchDialog.addEventListener('close', () => {
-      resolve(edSwitchDialog.returnValue === 'confirm');
-    }, { once: true });
-  });
 }
 
 // ─── Toast ────────────────────────────────────────────────────────────────────

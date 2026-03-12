@@ -1109,6 +1109,56 @@ details[open] .ed-collapsible__header::before {
   min-width: 5em;
 }
 
+/* ── Attribute conditions ─────────────────────────────────────────────────── */
+
+.ed-attr-card__conditions {
+  margin-top: 0.5em;
+  padding-top: 0.45em;
+  border-top: 1px solid var(--ta-border);
+}
+
+.ed-attr-card__conditions-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.35em;
+}
+
+.ed-attr-card__cond-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3em;
+}
+
+.ed-attr-cond-row {
+  display: flex;
+  align-items: center;
+  gap: 0.3em;
+  flex-wrap: wrap;
+}
+
+.ed-attr-cond-row__op {
+  width: 4.0em;
+  flex-shrink: 0;
+  font-size: 0.8rem;
+}
+
+.ed-attr-cond-row__val {
+  width: 4.5em;
+  flex-shrink: 0;
+}
+
+.ed-attr-cond-row__scene {
+  flex: 1 1 8em;
+  min-width: 6em;
+  font-size: 0.8rem;
+}
+
+.ed-attr-cond-row__msg {
+  flex: 2 1 10em;
+  min-width: 7em;
+}
+
 /* ── Affect-attributes editor ─────────────────────────────────────────────── */
 
 .ed-affect-attrs-editor .ed-field-grid {
@@ -1480,31 +1530,6 @@ details[open] .ed-collapsible__header::before {
   font-size: 0.82rem;
   color: var(--ta-danger);
   margin-top: 0.4em;
-}
-
-/* ── Mode-switch warning dialog ───────────────────────────────────────────── */
-
-.ed-dialog {
-  background-color: var(--ta-surface);
-  color: var(--ta-text);
-  border: 1px solid var(--ta-border);
-  border-radius: var(--ta-radius-large);
-  padding: calc(var(--ta-spacing) * 1.25);
-  max-width: 380px;
-  font-family: var(--ta-font-ui);
-  font-size: var(--ta-font-size-ui);
-  line-height: 1.5;
-}
-
-.ed-dialog::backdrop {
-  background-color: rgba(0, 0, 0, 0.5);
-}
-
-.ed-dialog__actions {
-  display: flex;
-  gap: 0.5em;
-  justify-content: flex-end;
-  margin-top: var(--ta-spacing);
 }
 
 /* ── Toast ────────────────────────────────────────────────────────────────── */

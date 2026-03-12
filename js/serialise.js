@@ -21,6 +21,9 @@
  * recipes: block is appended to the file that originally contained it, or to
  * recipes.yaml if no recipes were present on load.
  *
+ * attributes: block is appended to the file that originally contained it (if
+ * that file is not metadata.yaml), or appended to metadata.yaml by default.
+ *
  * @param {{ metadata: object, scenes: object, items: object, recipes: Array, assets: object }} campaign
  * @param {Map<string, string>|null} originalFileMap  previous file map for provenance; null = single-file mode
  * @returns {Map<string, string>}  filename → YAML text
@@ -43,12 +46,7 @@ export function serialiseCampaign(campaign, originalFileMap) {
 
   const metaObj = buildMetadataObj(metadata);
   let metaText = header + yaml.dump({ metadata: metaObj }, dumpOpts);
-
-  // Append top-level attributes block to metadata.yaml
-  const attrsObj = buildAttributesObj(attributes);
-  if (attrsObj) {
-    metaText += '\n' + yaml.dump({ attributes: attrsObj }, dumpOpts);
-  }
+  // attributes appended to metaText below, after provenance is determined
 
   // ── 2. Determine scene→file assignment ──────────────────────────────────────
 
@@ -101,6 +99,22 @@ export function serialiseCampaign(campaign, originalFileMap) {
       if (filename === 'metadata.yaml') continue;
       if (/^assets:/m.test(text)) { assetsFile = filename; break; }
     }
+  }
+
+  // ── 3d. Determine attributes→file assignment ────────────────────────────────
+  // null = append to metadata.yaml (default); otherwise a named file
+
+  let attrsFile = null;
+  if (originalFileMap && originalFileMap.size > 0) {
+    for (const [filename, text] of originalFileMap) {
+      if (filename === 'metadata.yaml') continue;
+      if (/^attributes:/m.test(text)) { attrsFile = filename; break; }
+    }
+  }
+
+  const attrsObj = buildAttributesObj(attributes);
+  if (attrsObj && !attrsFile) {
+    metaText += '\n' + yaml.dump({ attributes: attrsObj }, dumpOpts);
   }
 
   // ── 4. Group scenes by output file ──────────────────────────────────────────
@@ -172,6 +186,11 @@ export function serialiseCampaign(campaign, originalFileMap) {
       fileContent += '\n' + yaml.dump({ assets: assetsOut }, dumpOpts);
     }
 
+    // Append attributes block to the designated file
+    if (attrsFile && filename === attrsFile && attrsObj) {
+      fileContent += '\n' + yaml.dump({ attributes: attrsObj }, dumpOpts);
+    }
+
     result.set(filename, fileContent);
   }
 
@@ -194,6 +213,11 @@ export function serialiseCampaign(campaign, originalFileMap) {
   const assetsOut = buildAssetsObj(assets);
   if (!result.has(assetsFile) && assetsOut) {
     result.set(assetsFile, header + yaml.dump({ assets: assetsOut }, dumpOpts));
+  }
+
+  // If attributes are assigned to a standalone file that doesn't exist yet, create it.
+  if (attrsFile && !result.has(attrsFile) && attrsObj) {
+    result.set(attrsFile, header + yaml.dump({ attributes: attrsObj }, dumpOpts));
   }
 
   return result;
@@ -224,11 +248,17 @@ function buildAttributesObj(attrs) {
   for (const [name, def] of Object.entries(attrs)) {
     const entry = { value: Number(def.value ?? 0) };
     if (def.min != null) entry.min = Number(def.min);
-    if (def.min_message) entry.min_message = def.min_message;
-    if (def.min_scene) entry.min_scene = def.min_scene;
     if (def.max != null) entry.max = Number(def.max);
-    if (def.max_scene) entry.max_scene = def.max_scene;
     if (def.label) entry.label = def.label;
+    if (def.is_hidden) entry.is_hidden = true;
+    if (def.conditions?.length) {
+      entry.conditions = def.conditions.map(c => {
+        const condObj = { when: c.when };
+        if (c.scene) condObj.scene = c.scene;
+        if (c.message) condObj.message = c.message;
+        return condObj;
+      });
+    }
     obj[name] = entry;
   }
   return obj;
