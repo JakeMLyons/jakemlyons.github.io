@@ -90,9 +90,8 @@ export class GameOutput {
    * @param {string[]} [opts.choices]
    * @param {string[]} [opts.messages]
    * @param {boolean} [opts.isTerminal]
-   * @param {'end'|'death'|null} [opts.terminalReason]
+   * @param {'end'|null} [opts.terminalReason]
    * @param {boolean} [opts.noChoices]
-   * @param {string|null} [opts.deathMessage]
    * @param {object} [opts.assets] - resolved scene assets { image?: string|null, music?: string|null }
    * @param {string[]} [opts.sfx] - resolved sfx URLs to play once this turn, in order
    */
@@ -104,7 +103,6 @@ export class GameOutput {
     isTerminal = false,
     terminalReason = null,
     noChoices = false,
-    deathMessage = null,
     assets = {},
     sfx = [],
   }) {
@@ -115,7 +113,6 @@ export class GameOutput {
     this.isTerminal = isTerminal;
     this.terminalReason = terminalReason;
     this.noChoices = noChoices;
-    this.deathMessage = deathMessage; // min_message from attribute that triggered death
     this.assets = assets; // { image?: string|null, music?: string|null }
     this.sfx = sfx;       // string[] — resolved sfx URLs to play once this turn
   }

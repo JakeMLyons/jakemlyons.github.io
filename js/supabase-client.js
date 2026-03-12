@@ -415,7 +415,16 @@ export async function restoreFromVersion(campaignId, versionNum) {
   const { error: uploadErr } = await getClient().storage
     .from('campaigns')
     .upload(mainPath, blob, { upsert: true, contentType: 'application/zip' });
-  return { error: uploadErr };
+  if (uploadErr) return { error: uploadErr };
+
+  // Bump updated_at so the dashboard's cache-busting fetch sees the restored content
+  const { data: updated, error: dbErr } = await getClient()
+    .from('campaigns')
+    .update({ updated_at: new Date().toISOString() })
+    .eq('id', campaignId)
+    .select('updated_at')
+    .single();
+  return { error: dbErr ?? null, updated_at: updated?.updated_at ?? null };
 }
 
 /**

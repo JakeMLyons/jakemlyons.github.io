@@ -2678,25 +2678,7 @@ function buildAttributeCard(attrName, attrDef) {
   hiddenRow.appendChild(document.createTextNode(' Hidden — don\'t show in HUD'));
   grid.appendChild(hiddenRow);
 
-  // Helper: build a scene-ID <select> for min_scene / max_scene
-  function makeSceneSelect(currentVal) {
-    const sel = document.createElement('select');
-    sel.className = 'ed-input ed-input--scene-select';
-    const blank = document.createElement('option');
-    blank.value = '';
-    blank.textContent = '— none —';
-    sel.appendChild(blank);
-    for (const sid of Object.keys(campaign.scenes ?? {})) {
-      const opt = document.createElement('option');
-      opt.value = sid;
-      opt.textContent = sid;
-      opt.selected = sid === currentVal;
-      sel.appendChild(opt);
-    }
-    return sel;
-  }
-
-  // Min — full-width boundary row: [checkbox Min] [value] [scene] [message]
+  // Min — boundary row: [checkbox Min] [value]
   const hasMin = attrDef.min != null;
 
   const minCheck = document.createElement('input');
@@ -2707,46 +2689,22 @@ function buildAttributeCard(attrName, attrDef) {
   minInput.className += ' ed-input--narrow';
   if (!hasMin) minInput.classList.add('hidden');
 
-  const minSceneSelect = makeSceneSelect(attrDef.min_scene ?? '');
-  minSceneSelect.title = 'Scene to redirect to when min is reached (leave blank to trigger death)';
-  if (!hasMin) minSceneSelect.classList.add('hidden');
-  minSceneSelect.addEventListener('change', () => {
-    attrDef.min_scene = minSceneSelect.value || undefined;
-    markDirty();
-    scheduleValidation();
-  });
-
-  const minMsgInput = makeInput('text', attrDef.min_message ?? '', 'Message at min…');
-  if (!hasMin) minMsgInput.classList.add('hidden');
-  minMsgInput.addEventListener('input', () => {
-    attrDef.min_message = minMsgInput.value || undefined;
-    markDirty();
-  });
-
   const minBoundaryRow = document.createElement('label');
   minBoundaryRow.className = 'ed-attr-boundary-row';
   minBoundaryRow.appendChild(minCheck);
   minBoundaryRow.appendChild(document.createTextNode(' Min'));
   minBoundaryRow.appendChild(minInput);
-  minBoundaryRow.appendChild(minSceneSelect);
-  minBoundaryRow.appendChild(minMsgInput);
   grid.appendChild(minBoundaryRow);
 
   minCheck.addEventListener('change', () => {
     const en = minCheck.checked;
     minInput.classList.toggle('hidden', !en);
-    minSceneSelect.classList.toggle('hidden', !en);
-    minMsgInput.classList.toggle('hidden', !en);
     if (en) {
       attrDef.min = Number(minInput.value) || 0;
       if (!minInput.value) minInput.value = '0';
     } else {
       delete attrDef.min;
-      delete attrDef.min_message;
-      delete attrDef.min_scene;
       minInput.value = '0';
-      minMsgInput.value = '';
-      minSceneSelect.value = '';
     }
     markDirty();
     scheduleValidation();
@@ -2756,7 +2714,7 @@ function buildAttributeCard(attrName, attrDef) {
     markDirty();
   });
 
-  // Max — full-width boundary row: [checkbox Max] [value] [scene] [message]
+  // Max — boundary row: [checkbox Max] [value]
   const hasMax = attrDef.max != null;
 
   const maxCheck = document.createElement('input');
@@ -2767,46 +2725,22 @@ function buildAttributeCard(attrName, attrDef) {
   maxInput.className += ' ed-input--narrow';
   if (!hasMax) maxInput.classList.add('hidden');
 
-  const maxSceneSelect = makeSceneSelect(attrDef.max_scene ?? '');
-  maxSceneSelect.title = 'Scene to redirect to when max is reached (optional)';
-  if (!hasMax) maxSceneSelect.classList.add('hidden');
-  maxSceneSelect.addEventListener('change', () => {
-    attrDef.max_scene = maxSceneSelect.value || undefined;
-    markDirty();
-    scheduleValidation();
-  });
-
-  const maxMsgInput = makeInput('text', attrDef.max_message ?? '', 'Message at max…');
-  if (!hasMax) maxMsgInput.classList.add('hidden');
-  maxMsgInput.addEventListener('input', () => {
-    attrDef.max_message = maxMsgInput.value || undefined;
-    markDirty();
-  });
-
   const maxBoundaryRow = document.createElement('label');
   maxBoundaryRow.className = 'ed-attr-boundary-row';
   maxBoundaryRow.appendChild(maxCheck);
   maxBoundaryRow.appendChild(document.createTextNode(' Max'));
   maxBoundaryRow.appendChild(maxInput);
-  maxBoundaryRow.appendChild(maxSceneSelect);
-  maxBoundaryRow.appendChild(maxMsgInput);
   grid.appendChild(maxBoundaryRow);
 
   maxCheck.addEventListener('change', () => {
     const en = maxCheck.checked;
     maxInput.classList.toggle('hidden', !en);
-    maxSceneSelect.classList.toggle('hidden', !en);
-    maxMsgInput.classList.toggle('hidden', !en);
     if (en) {
       attrDef.max = Number(maxInput.value) || 100;
       if (!maxInput.value) maxInput.value = String(attrDef.max);
     } else {
       delete attrDef.max;
-      delete attrDef.max_scene;
-      delete attrDef.max_message;
       maxInput.value = '100';
-      maxMsgInput.value = '';
-      maxSceneSelect.value = '';
     }
     markDirty();
     scheduleValidation();

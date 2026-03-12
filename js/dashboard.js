@@ -318,7 +318,8 @@ function showPlaceholder() {
  * Called without await from buildDetailMy so the panel renders immediately
  * while the network fetch runs in the background.
  */
-async function buildVersionHistory(campaignId, container) {
+async function buildVersionHistory(c, container) {
+  const campaignId = c.id;
   const sectionLabel = document.createElement('div');
   sectionLabel.className = 'detail-label';
   sectionLabel.style.marginTop = '1rem';
@@ -375,8 +376,16 @@ async function buildVersionHistory(campaignId, container) {
       restoreBtn.disabled = true;
       restoreBtn.textContent = 'Restoring…';
       try {
-        const { error } = await restoreFromVersion(campaignId, v.version_num);
+        const { error, updated_at } = await restoreFromVersion(campaignId, v.version_num);
         if (error) { showToast('Restore failed: ' + error.message); return; }
+        // Patch in-memory campaign objects so the next launch fetch bypasses the browser cache
+        if (updated_at) {
+          c.updated_at = updated_at;
+          const inMy = myData.find((x) => x.id === campaignId);
+          if (inMy) inMy.updated_at = updated_at;
+          const inCommunity = communityData.find((x) => x.id === campaignId);
+          if (inCommunity) inCommunity.updated_at = updated_at;
+        }
         showToast(`Restored to version ${v.version_num}.`);
       } catch {
         showToast('Could not connect to the platform.');
@@ -550,7 +559,7 @@ function buildDetailMy(c, container) {
   body.appendChild(actions);
 
   // Version history — async, appends to body after fetch so panel renders immediately
-  buildVersionHistory(c.id, body);
+  buildVersionHistory(c, body);
 
   container.appendChild(body);
 }
@@ -1349,7 +1358,8 @@ function waitForPolicyAcceptance() {
 
 async function launchFromPlatform(c) {
   try {
-    const res = await fetch(c.zip_url);
+    const url = c.zip_url + '?t=' + encodeURIComponent(c.updated_at ?? Date.now());
+    const res = await fetch(url);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const files  = await unzipToFiles(await res.arrayBuffer());
     const loaded = await loadCampaign(files);
@@ -1363,7 +1373,8 @@ async function launchFromPlatform(c) {
 async function launchToEditor(c) {
   showToast('Loading campaign for editing…');
   try {
-    const res = await fetch(c.zip_url);
+    const url = c.zip_url + '?t=' + encodeURIComponent(c.updated_at ?? Date.now());
+    const res = await fetch(url);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const files  = await unzipToFiles(await res.arrayBuffer());
     const loaded = await loadCampaign(files);
