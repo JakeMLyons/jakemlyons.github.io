@@ -319,6 +319,7 @@ function buildChoiceObj(c) {
   if (c.next)                     obj.next           = c.next;
   if (c.requires_item)            obj.requires_item  = c.requires_item;
   if (c.requires_items?.length)   obj.requires_items = c.requires_items;
+  if (c.requires_attributes)      obj.requires_attributes = c.requires_attributes;
   if (c.gives_items?.length)      obj.gives_items    = c.gives_items;
   if (c.removes_items?.length)    obj.removes_items  = c.removes_items;
   if (c.gives_notes?.length)      obj.gives_notes    = c.gives_notes;
