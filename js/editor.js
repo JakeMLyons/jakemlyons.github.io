@@ -158,6 +158,14 @@ const edAssetsNav  = document.getElementById('ed-assets-nav');
 const edAssetsForm = document.getElementById('ed-assets-form');
 const edAssetsList = document.getElementById('ed-assets-list');
 
+// Scene type / on_revisit
+const edSceneType        = document.getElementById('ed-scene-type');
+const edSceneNext        = document.getElementById('ed-scene-next');
+const edSceneNextLabel   = document.getElementById('ed-scene-next-label');
+const edOnRevisitDetails = document.getElementById('ed-on-revisit-details');
+const edRevisitText      = document.getElementById('ed-revisit-text');
+const edRevisitRedirect  = document.getElementById('ed-revisit-redirect');
+
 // Scene assets selects
 const edSceneAssetImage  = document.getElementById('ed-scene-asset-image');
 const edSceneAssetMusic  = document.getElementById('ed-scene-asset-music');
@@ -967,8 +975,31 @@ function wireVisualPane() {
   edSceneTerminal.addEventListener('change', () => {
     if (!activeScene) return;
     campaign.scenes[activeScene].end = edSceneTerminal.checked ? true : undefined;
-    edChoicesSection.classList.toggle('hidden', edSceneTerminal.checked);
+    updateSceneTypeUI(activeScene, campaign.scenes[activeScene].type ?? 'decision');
     scheduleValidation();
+  });
+
+  edSceneType.addEventListener('change', () => {
+    if (!activeScene) return;
+    const scene = campaign.scenes[activeScene];
+    const type = edSceneType.value;
+    if (type === 'decision') delete scene.type; else scene.type = type;
+    if (type !== 'through') delete scene.next;
+    markDirty(); scheduleValidation();
+    updateSceneTypeUI(activeScene, type);
+  });
+
+  edSceneNext.addEventListener('change', () => {
+    if (!activeScene) return;
+    campaign.scenes[activeScene].next = edSceneNext.value || undefined;
+    markDirty(); scheduleValidation();
+  });
+
+  edRevisitText.addEventListener('input', () => {
+    writeRevisit('text', edRevisitText.value || undefined);
+  });
+  edRevisitRedirect.addEventListener('change', () => {
+    writeRevisit('redirect', edRevisitRedirect.value || undefined);
   });
 
   // on_enter fields
@@ -1435,7 +1466,20 @@ function renderSceneForm(sceneId) {
   edSceneTitle.value    = scene.title ?? '';
   edSceneText.value     = scene.text ?? '';
   edSceneTerminal.checked = !!scene.end;
-  edChoicesSection.classList.toggle('hidden', !!scene.end);
+
+  // Scene type
+  const sceneType = scene.type ?? 'decision';
+  edSceneType.value = sceneType;
+  updateSceneTypeUI(sceneId, sceneType);
+
+  // "Continue to" dropdown (through scenes)
+  populateSceneSelect(edSceneNext, scene.next ?? '');
+
+  // on_revisit
+  const rev = scene.on_revisit ?? {};
+  edOnRevisitDetails.open = !!(rev.text || rev.redirect);
+  edRevisitText.value = rev.text ?? '';
+  populateSceneSelect(edRevisitRedirect, rev.redirect ?? '');
 
   // on_enter
   const oe = scene.on_enter ?? {};
@@ -1454,12 +1498,12 @@ function renderSceneForm(sceneId) {
   edOeGivesItemsCtr.innerHTML = '';
   makePillInput(edOeGivesItemsCtr, oe.gives_items ?? [], (items) => {
     writeOnEnterField('gives_items', items.length ? items : undefined);
-  });
+  }, 'ed-item-datalist');
 
   edOeRemovesItemsCtr.innerHTML = '';
   makePillInput(edOeRemovesItemsCtr, oe.removes_items ?? [], (items) => {
     writeOnEnterField('removes_items', items.length ? items : undefined);
-  });
+  }, 'ed-item-datalist');
 
   edOeGivesNotesCtr.innerHTML = '';
   makeNotesList(edOeGivesNotesCtr, oe.gives_notes ?? [], (notes) => {
@@ -1490,6 +1534,55 @@ function renderSceneForm(sceneId) {
 
   // Choices
   renderChoicesList(sceneId);
+}
+
+/**
+ * Populate a scene-ID dropdown with all scenes in the campaign.
+ * First option is "— not set —" (empty value).
+ */
+function populateSceneSelect(selectEl, currentValue) {
+  selectEl.innerHTML = '';
+  const noneOpt = document.createElement('option');
+  noneOpt.value = ''; noneOpt.textContent = '— not set —';
+  selectEl.appendChild(noneOpt);
+  for (const sid of Object.keys(campaign.scenes ?? {}).sort()) {
+    const opt = document.createElement('option');
+    opt.value = sid; opt.textContent = sid;
+    opt.selected = sid === currentValue;
+    selectEl.appendChild(opt);
+  }
+  selectEl.value = currentValue ?? '';
+}
+
+/**
+ * Show/hide scene-type-dependent UI elements and re-render choices.
+ */
+function updateSceneTypeUI(sceneId, type) {
+  const isThrough  = type === 'through';
+  const isLogical  = type === 'logical';
+  const isTerminal = !!campaign.scenes[sceneId]?.end;
+
+  edSceneNextLabel.classList.toggle('hidden', !isThrough);
+  edSceneNext.classList.toggle('hidden', !isThrough);
+  edChoicesSection.classList.toggle('hidden', isTerminal || isThrough);
+
+  // Dim scene text for logical scenes (text is never shown to players)
+  edSceneText.classList.toggle('ed-input--muted', isLogical);
+
+  renderChoicesList(sceneId);
+}
+
+function writeRevisit(field, value) {
+  if (!activeScene) return;
+  const scene = campaign.scenes[activeScene];
+  if (!scene.on_revisit) scene.on_revisit = {};
+  if (value === undefined) {
+    delete scene.on_revisit[field];
+    if (!scene.on_revisit.text && !scene.on_revisit.redirect) delete scene.on_revisit;
+  } else {
+    scene.on_revisit[field] = value;
+  }
+  markDirty(); scheduleValidation();
 }
 
 /**
@@ -1588,6 +1681,98 @@ function renderChoicesList(sceneId) {
   for (let i = 0; i < choices.length; i++) {
     edChoicesList.appendChild(buildChoiceCard(sceneId, i));
   }
+}
+
+/**
+ * Row-based editor for requires_items.
+ * Supports plain strings and structured { item, is/is_not: 'owned'|'obtained' } objects.
+ */
+function makeRequiresItemsEditor(container, seed, singular, onChange, knownItems) {
+  let entries = normaliseRequiresItems(seed, singular);
+
+  function render() {
+    container.innerHTML = '';
+
+    // Datalist for item autocomplete
+    const dlId = 'ri-dl-' + Math.random().toString(36).slice(2, 8);
+    const dl = document.createElement('datalist');
+    dl.id = dlId;
+    for (const item of knownItems) {
+      const o = document.createElement('option'); o.value = item; dl.appendChild(o);
+    }
+    container.appendChild(dl);
+
+    for (let i = 0; i < entries.length; i++) {
+      const entry = entries[i];
+      const row = document.createElement('div');
+      row.className = 'ed-req-attrs__row';
+
+      const itemInput = makeInput('text', entry.item, 'item name');
+      itemInput.setAttribute('list', dlId);
+      itemInput.className += ' ed-req-attrs__attr-badge';
+      itemInput.addEventListener('input', () => {
+        entries[i].item = itemInput.value.trim();
+        onChange(serialiseRequiresItems(entries));
+      });
+
+      const modSel = document.createElement('select');
+      modSel.className = 'ed-input ed-req-attrs__op';
+      for (const [val, label] of [['is', 'is'], ['is_not', 'is not']]) {
+        const opt = document.createElement('option');
+        opt.value = val; opt.textContent = label; opt.selected = val === entry.modifier;
+        modSel.appendChild(opt);
+      }
+      modSel.addEventListener('change', () => {
+        entries[i].modifier = modSel.value;
+        onChange(serialiseRequiresItems(entries));
+      });
+
+      const modeSel = document.createElement('select');
+      modeSel.className = 'ed-input ed-req-attrs__op';
+      for (const m of ['owned', 'obtained']) {
+        const opt = document.createElement('option');
+        opt.value = m; opt.textContent = m; opt.selected = m === entry.mode;
+        modeSel.appendChild(opt);
+      }
+      modeSel.addEventListener('change', () => {
+        entries[i].mode = modeSel.value;
+        onChange(serialiseRequiresItems(entries));
+      });
+
+      const rmBtn = document.createElement('button');
+      rmBtn.className = 'ed-btn--icon';
+      rmBtn.type = 'button';
+      rmBtn.textContent = '✕';
+      rmBtn.title = 'Remove';
+      rmBtn.addEventListener('click', () => {
+        entries.splice(i, 1);
+        onChange(serialiseRequiresItems(entries));
+        render();
+      });
+
+      row.appendChild(itemInput);
+      row.appendChild(modSel);
+      row.appendChild(modeSel);
+      row.appendChild(rmBtn);
+      container.appendChild(row);
+    }
+
+    const addBtn = document.createElement('button');
+    addBtn.className = 'btn btn--ghost btn--small';
+    addBtn.type = 'button';
+    addBtn.style.width = 'fit-content';
+    addBtn.textContent = '+ Add requirement';
+    addBtn.addEventListener('click', () => {
+      entries.push({ item: '', modifier: 'is', mode: 'owned' });
+      render();
+      // Focus the new item input
+      const rows = container.querySelectorAll('.ed-req-attrs__row');
+      rows[rows.length - 1]?.querySelector('input')?.focus();
+    });
+    container.appendChild(addBtn);
+  }
+
+  render();
 }
 
 function buildChoiceCard(sceneId, index) {
@@ -1714,7 +1899,8 @@ function buildChoiceCard(sceneId, index) {
     targetGrid.appendChild(element);
   }
 
-  // Label
+  // Label (hidden for logical scenes — labels are not shown to players)
+  const isLogicalScene = campaign.scenes[sceneId]?.type === 'logical';
   const labelInput = makeInput('text', choice.label ?? '', 'Choice text shown to the player');
   labelInput.addEventListener('input', () => {
     choice.label = labelInput.value;
@@ -1722,7 +1908,12 @@ function buildChoiceCard(sceneId, index) {
     labelSpan.className = 'ed-choice-card__label' + (!choice.label ? ' ed-choice-card__label--empty' : '');
     scheduleValidation();
   });
-  addField('Label', labelInput);
+  const labelLbl = document.createElement('label');
+  labelLbl.className = 'ed-label';
+  labelLbl.textContent = 'Label';
+  if (isLogicalScene) { labelLbl.classList.add('hidden'); labelInput.classList.add('hidden'); }
+  grid.appendChild(labelLbl);
+  grid.appendChild(labelInput);
 
   // Next scene
   const nextSelect = document.createElement('select');
@@ -1817,17 +2008,13 @@ function buildChoiceCard(sceneId, index) {
                       choice.gives_items?.length || choice.removes_items?.length);
   const itemsInner = makeGroup('Items', hasItems);
 
-  // Requires items — merge requires_item (single) and requires_items (array)
+  // Requires items — row-based editor supporting structured objects
   const risCtr = document.createElement('div');
-  risCtr.className = 'ed-pill-container';
-  const risSeed = [
-    ...(choice.requires_item ? [choice.requires_item] : []),
-    ...(choice.requires_items ?? []),
-  ];
-  makePillInput(risCtr, risSeed, (items) => {
+  risCtr.className = 'ed-req-items';
+  makeRequiresItemsEditor(risCtr, choice.requires_items, choice.requires_item, (serialised) => {
     delete choice.requires_item;
-    choice.requires_items = items.length ? items : undefined;
-    scheduleValidation();
+    choice.requires_items = serialised.length ? serialised : undefined;
+    scheduleValidation(); markDirty();
   }, knownItems);
   addField('Requires items', risCtr, itemsInner);
 
@@ -1852,15 +2039,19 @@ function buildChoiceCard(sceneId, index) {
   // ── Attributes group ─────────────────────────────────────────────────────────
   const attrDefs = campaign.attributes ?? campaign.metadata?.attributes ?? {};
   const attrNames = Object.keys(attrDefs);
-  const ATTR_OPS = ['>', '>=', '<', '<=', '='];
 
   if (attrNames.length > 0) {
-    const hasAttrs = !!(choice.requires_attributes?.length ||
+    const ra = choice.requires_attributes;
+    const hasRequiresAttrs = Array.isArray(ra) ? ra.length > 0 : (ra && Object.keys(ra).length > 0);
+    const hasAttrs = !!(hasRequiresAttrs ||
                         (choice.affect_attributes &&
-                         Object.values(choice.affect_attributes).some(v => Number(v) !== 0)));
+                         Object.values(choice.affect_attributes).some(v => {
+                           const { op, magnitude } = parseAffectOp(v);
+                           return op === '=' || magnitude !== 0;
+                         })));
     const attrsInner = makeGroup('Attributes', hasAttrs);
 
-    // Requires attributes
+    // Requires attributes — structured row-based editor
     const racCtr = document.createElement('div');
     racCtr.className = 'ed-req-attrs';
 
@@ -1869,48 +2060,56 @@ function buildChoiceCard(sceneId, index) {
     racDl.id = racDlId;
     for (const name of attrNames) {
       const o = document.createElement('option');
-      o.value = name;
-      o.textContent = attrDefs[name].label || name;
+      o.value = name; o.textContent = attrDefs[name].label || name;
       racDl.appendChild(o);
     }
     racCtr.appendChild(racDl);
 
-    function buildOpSelect(selectedOp) {
-      const sel = document.createElement('select');
-      sel.className = 'ed-input ed-req-attrs__op';
-      for (const op of ATTR_OPS) {
-        const opt = document.createElement('option');
-        opt.value = op; opt.textContent = op;
-        opt.selected = op === selectedOp;
-        sel.appendChild(opt);
-      }
-      return sel;
-    }
+    // Working copy as flat array of { attr, op, value }
+    let racRows = normRequiresAttrs(choice.requires_attributes);
 
-    let pendingAttrName = null;
+    function writeRacRows() {
+      choice.requires_attributes = conditionsToDict(racRows);
+      markDirty(); scheduleValidation();
+    }
 
     function refreshConditions() {
       racCtr.innerHTML = '';
       racCtr.appendChild(racDl);
 
-      const conditions = choice.requires_attributes ?? [];
-      for (let ci = 0; ci < conditions.length; ci++) {
-        const cond = conditions[ci];
+      for (let ci = 0; ci < racRows.length; ci++) {
+        const cond = racRows[ci];
         const row = document.createElement('div');
         row.className = 'ed-req-attrs__row';
 
-        const badge = document.createElement('span');
-        badge.className = 'ed-req-attrs__attr-badge';
-        badge.textContent = attrDefs[cond.attr]?.label || cond.attr;
+        // Attribute selector (datalist)
+        const attrInput = makeInput('text', cond.attr, 'attribute…');
+        attrInput.className += ' ed-req-attrs__attr-badge';
+        attrInput.setAttribute('list', racDlId);
+        attrInput.addEventListener('change', () => {
+          racRows[ci].attr = attrInput.value.trim();
+          writeRacRows();
+        });
 
-        const opSel = buildOpSelect(cond.op ?? '>=');
-        opSel.addEventListener('change', () => { cond.op = opSel.value; markDirty(); scheduleValidation(); });
+        // Operator dropdown
+        const opSel = document.createElement('select');
+        opSel.className = 'ed-input ed-req-attrs__op';
+        for (const op of RA_OPS) {
+          const opt = document.createElement('option');
+          opt.value = op; opt.textContent = op; opt.selected = op === cond.op;
+          opSel.appendChild(opt);
+        }
+        opSel.addEventListener('change', () => {
+          racRows[ci].op = opSel.value;
+          writeRacRows();
+        });
 
-        const valInput = makeInput('number', cond.value != null ? String(Number(cond.value)) : '0', '0');
+        // Value input
+        const valInput = makeInput('number', String(cond.value), '0');
         valInput.className += ' ed-req-attrs__val';
         valInput.addEventListener('input', () => {
-          cond.value = valInput.value !== '' ? Number(valInput.value) : 0;
-          markDirty(); scheduleValidation();
+          racRows[ci].value = valInput.value !== '' ? Number(valInput.value) : 0;
+          writeRacRows();
         });
 
         const rmBtn = document.createElement('button');
@@ -1919,84 +2118,28 @@ function buildChoiceCard(sceneId, index) {
         rmBtn.textContent = '✕';
         rmBtn.title = 'Remove condition';
         rmBtn.addEventListener('click', () => {
-          conditions.splice(ci, 1);
-          choice.requires_attributes = conditions.length ? conditions : undefined;
-          markDirty(); scheduleValidation();
+          racRows.splice(ci, 1);
+          writeRacRows();
           refreshConditions();
         });
 
-        row.appendChild(badge);
+        row.appendChild(attrInput);
         row.appendChild(opSel);
         row.appendChild(valInput);
         row.appendChild(rmBtn);
         racCtr.appendChild(row);
       }
 
-      if (pendingAttrName === null) {
-        const picker = document.createElement('input');
-        picker.className = 'pill-input';
-        picker.placeholder = 'Add attribute condition…';
-        picker.setAttribute('list', racDlId);
-
-        function commitPicker() {
-          const val = picker.value.trim();
-          if (attrNames.includes(val)) {
-            pendingAttrName = val;
-            refreshConditions();
-          } else {
-            picker.value = '';
-          }
-        }
-
-        picker.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter') { e.preventDefault(); commitPicker(); }
-        });
-        picker.addEventListener('change', () => commitPicker());
-        racCtr.appendChild(picker);
-      } else {
-        const composerRow = document.createElement('div');
-        composerRow.className = 'ed-req-attrs__composer';
-
-        const badge = document.createElement('span');
-        badge.className = 'ed-req-attrs__attr-badge';
-        badge.textContent = attrDefs[pendingAttrName]?.label || pendingAttrName;
-
-        const opSel = buildOpSelect('>=');
-        const valInput = makeInput('number', '1', '0');
-        valInput.className += ' ed-req-attrs__val';
-
-        const addBtn = document.createElement('button');
-        addBtn.className = 'ed-btn--icon ed-req-attrs__add';
-        addBtn.type = 'button';
-        addBtn.textContent = '＋';
-        addBtn.title = 'Add condition';
-        addBtn.addEventListener('click', () => {
-          const newCond = {
-            attr: pendingAttrName,
-            op: opSel.value,
-            value: valInput.value !== '' ? Number(valInput.value) : 0,
-          };
-          choice.requires_attributes = [...(choice.requires_attributes ?? []), newCond];
-          pendingAttrName = null;
-          markDirty(); scheduleValidation();
-          refreshConditions();
-        });
-
-        const cancelBtn = document.createElement('button');
-        cancelBtn.className = 'ed-btn--icon';
-        cancelBtn.type = 'button';
-        cancelBtn.textContent = '✕';
-        cancelBtn.title = 'Cancel';
-        cancelBtn.addEventListener('click', () => { pendingAttrName = null; refreshConditions(); });
-
-        composerRow.appendChild(badge);
-        composerRow.appendChild(opSel);
-        composerRow.appendChild(valInput);
-        composerRow.appendChild(addBtn);
-        composerRow.appendChild(cancelBtn);
-        racCtr.appendChild(composerRow);
-        setTimeout(() => valInput.focus(), 0);
-      }
+      const addBtn = document.createElement('button');
+      addBtn.className = 'btn btn--ghost btn--small';
+      addBtn.type = 'button';
+      addBtn.textContent = '+ Add requirement';
+      addBtn.addEventListener('click', () => {
+        racRows.push({ attr: attrNames[0] ?? '', op: '>=', value: 1 });
+        writeRacRows();
+        refreshConditions();
+      });
+      racCtr.appendChild(addBtn);
     }
 
     refreshConditions();
@@ -2852,6 +2995,110 @@ function buildAttributeCard(attrName, attrDef) {
   return card;
 }
 
+// ─── affect_attributes operator helpers ───────────────────────────────────────
+
+/**
+ * Parse an affect_attributes value string into { op, magnitude } for the editor UI.
+ * Handles "+ 5", "- 3", "= 0", "= -1", and legacy bare numbers.
+ */
+function parseAffectOp(raw) {
+  const s = String(raw ?? '').trim();
+  const m = s.match(/^([+\-=])\s*(-?\d+(?:\.\d+)?)$/);
+  if (m) return { op: m[1], magnitude: Number(m[2]) };
+  const n = Number(raw);
+  return { op: n < 0 ? '-' : '+', magnitude: Math.abs(n) };
+}
+
+/**
+ * Serialise { op, magnitude } back to the canonical string form used in YAML.
+ */
+function formatAffectOp(op, magnitude) {
+  return `${op} ${magnitude}`;
+}
+
+// ─── requires_attributes normalisation ────────────────────────────────────────
+
+// ─── requires_attributes helpers ──────────────────────────────────────────────
+
+const RA_OPS = ['>=', '<=', '>', '<', '=', '!='];
+
+/** Parse a single condition token like ">= 18" → { op, value } or null. */
+function parseConditionToken(s) {
+  const m = s.trim().match(/^(>=|<=|!=|>|<|=)\s*(-?\d+(?:\.\d+)?)$/);
+  if (!m) return null;
+  return { op: m[1], value: Number(m[2]) };
+}
+
+/**
+ * Convert any requires_attributes format (legacy array OR dict) to a flat
+ * array of { attr, op, value } objects for the row-based editor.
+ */
+function normRequiresAttrs(raw) {
+  if (!raw) return [];
+  if (Array.isArray(raw)) {
+    return raw.filter(c => c.attr).map(c => ({
+      attr: c.attr, op: c.op ?? '>=', value: Number(c.value ?? 0),
+    }));
+  }
+  // Dict format: { health: ">= 10, <= 50" }
+  const result = [];
+  for (const [attr, str] of Object.entries(raw)) {
+    for (const part of String(str).split(',')) {
+      const t = parseConditionToken(part);
+      if (t) result.push({ attr, op: t.op, value: t.value });
+    }
+  }
+  return result;
+}
+
+/**
+ * Serialise a flat conditions array back to the dict format used in YAML.
+ * Groups multiple conditions on the same attribute into comma-separated strings.
+ */
+function conditionsToDict(conditions) {
+  const dict = {};
+  for (const { attr, op, value } of conditions) {
+    if (!attr) continue;
+    const part = `${op} ${value}`;
+    dict[attr] = attr in dict ? `${dict[attr]}, ${part}` : part;
+  }
+  return Object.keys(dict).length ? dict : undefined;
+}
+
+// ─── requires_items normalisation ─────────────────────────────────────────────
+
+/**
+ * Normalise a mixed requires_items array to internal { item, modifier, mode } objects.
+ * Also folds in the singular requires_item field.
+ */
+function normaliseRequiresItems(raw, singular) {
+  const entries = [];
+  if (singular) entries.push({ item: singular, modifier: 'is', mode: 'owned' });
+  for (const r of raw ?? []) {
+    if (typeof r === 'string') {
+      entries.push({ item: r, modifier: 'is', mode: 'owned' });
+    } else if (r && r.item) {
+      const modifier = 'is_not' in r ? 'is_not' : 'is';
+      const mode = r[modifier] ?? 'owned';
+      entries.push({ item: r.item, modifier, mode });
+    }
+  }
+  return entries;
+}
+
+/**
+ * Serialise internal entries back to the YAML-compatible format.
+ * Simple { item, is: 'owned' } → plain string shorthand.
+ */
+function serialiseRequiresItems(entries) {
+  return entries
+    .map(e => {
+      if (e.modifier === 'is' && e.mode === 'owned') return e.item;
+      return { item: e.item, [e.modifier]: e.mode };
+    })
+    .filter(e => (typeof e === 'string' ? e : e.item));
+}
+
 /**
  * Render an affect_attributes editor into container.
  * Shows one signed number input per attribute defined in campaign.attributes.
@@ -2875,7 +3122,10 @@ function makeAffectAttributesEditor(container, currentAttrs, onChange, opts = {}
   }
 
   const noToggle = !!opts.noToggle;
-  const hasValues = currentAttrs && Object.values(currentAttrs).some((v) => Number(v) !== 0);
+  const hasValues = currentAttrs && Object.values(currentAttrs).some((v) => {
+    const { op, magnitude } = parseAffectOp(v);
+    return op === '=' || magnitude !== 0;
+  });
 
   // In noToggle mode, write directly into container; otherwise use a collapsible body
   let toggle = null;
@@ -2915,7 +3165,10 @@ function makeAffectAttributesEditor(container, currentAttrs, onChange, opts = {}
   function notifyChange() {
     const filtered = {};
     for (const [k, v] of Object.entries(current)) {
-      if (Number(v) !== 0) filtered[k] = v;
+      const { op, magnitude } = parseAffectOp(v);
+      // Drop "+ 0" and "- 0" (no-ops). Always keep "= N" (explicit set, even to 0).
+      if (op !== '=' && magnitude === 0) continue;
+      filtered[k] = formatAffectOp(op, magnitude);
     }
     onChange(Object.keys(filtered).length > 0 ? filtered : undefined);
   }
@@ -2937,13 +3190,26 @@ function makeAffectAttributesEditor(container, currentAttrs, onChange, opts = {}
       badge.className = 'ed-req-attrs__attr-badge';
       badge.textContent = displayLabel;
 
-      const input = makeInput('number', String(Number(current[attrName])), '0');
+      const { op: initOp, magnitude: initMag } = parseAffectOp(current[attrName]);
+
+      const opSel = document.createElement('select');
+      opSel.className = 'ed-input ed-req-attrs__op';
+      for (const o of ['+', '-', '=']) {
+        const opt = document.createElement('option');
+        opt.value = o; opt.textContent = o; opt.selected = o === initOp;
+        opSel.appendChild(opt);
+      }
+
+      const input = makeInput('number', String(initMag), '0');
       input.className += ' ed-req-attrs__val';
       input.dataset.attr = attrName;
-      input.addEventListener('input', () => {
-        current[attrName] = input.value !== '' ? Number(input.value) : 0;
+
+      function syncValue() {
+        current[attrName] = formatAffectOp(opSel.value, input.value !== '' ? Number(input.value) : 0);
         notifyChange();
-      });
+      }
+      opSel.addEventListener('change', syncValue);
+      input.addEventListener('input', syncValue);
 
       const rmBtn = document.createElement('button');
       rmBtn.className = 'ed-btn--icon';
@@ -2961,6 +3227,7 @@ function makeAffectAttributesEditor(container, currentAttrs, onChange, opts = {}
       });
 
       row.appendChild(badge);
+      row.appendChild(opSel);
       row.appendChild(input);
       row.appendChild(rmBtn);
       root.appendChild(row);
@@ -2975,7 +3242,7 @@ function makeAffectAttributesEditor(container, currentAttrs, onChange, opts = {}
     function commitPicker() {
       const val = picker.value.trim();
       if (!attrNames.includes(val)) { picker.value = ''; return; }
-      if (current[val] === undefined) current[val] = 0;
+      if (current[val] === undefined) current[val] = '+ 0';
       notifyChange();
       picker.value = '';
       refresh();

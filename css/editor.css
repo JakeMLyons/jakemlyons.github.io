@@ -1018,6 +1018,38 @@ details[open] .ed-collapsible__header::before {
   padding: 0.15em 0.3em;
 }
 
+/* ── Form-control width constraints ──────────────────────────────────────── */
+/*                                                                            */
+/* CONVENTION: subordinate controls (selects, short inputs) must never span  */
+/* the full form width. Broad caps are set here; element-specific overrides  */
+/* follow. Primary content (textarea, message input, label input) is exempt. */
+
+/* All selects inside a two-column field grid are capped.                    */
+.ed-field-grid .ed-select {
+  max-width: 20em;
+}
+
+/* The next-scene select lives inside .ed-choice-next-wrap (flex:1) and      */
+/* should fill that wrapper — undo the grid cap.                             */
+.ed-choice-next-wrap .ed-select {
+  max-width: none;
+}
+
+/* Scene-type has three short known options. */
+#ed-scene-type {
+  max-width: 12em;
+}
+
+/* Version strings are always short. */
+#ed-meta-version {
+  max-width: 8em;
+}
+
+/* Number inputs in attribute cards (starting value, min, max). */
+.ed-attr-card__grid input[type="number"] {
+  max-width: 8em;
+}
+
 /* ── Attributes registry editor ───────────────────────────────────────────── */
 
 .ed-attributes-editor {
@@ -1243,8 +1275,9 @@ details[open] .ed-collapsible__header::before {
 }
 
 .ed-req-attrs__attr-badge {
-  flex: 1 1 6em;
+  flex: 0 1 14em;
   min-width: 4em;
+  max-width: 14em;
   font-size: 0.8rem;
   color: var(--ta-text-muted);
   background: var(--ta-surface);
@@ -1257,7 +1290,8 @@ details[open] .ed-collapsible__header::before {
 }
 
 .ed-req-attrs__op {
-  width: 3.5em;
+  width: auto;
+  min-width: 3em;
   flex-shrink: 0;
   font-size: 0.8rem;
 }
@@ -1265,6 +1299,11 @@ details[open] .ed-collapsible__header::before {
 .ed-req-attrs__val {
   width: 4.5em;
   flex-shrink: 0;
+}
+
+/* "Add" buttons inside column-flex widgets should never stretch full width */
+.ed-req-attrs > .btn {
+  align-self: flex-start;
 }
 
 /* Composer row — always-visible "add condition" form at the bottom of requires_attributes */

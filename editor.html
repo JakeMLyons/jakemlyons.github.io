@@ -241,6 +241,17 @@
               End scene (<code>end: true</code>) — hides choices
             </label>
 
+            <label class="ed-label" for="ed-scene-type">Scene type</label>
+            <select class="ed-select" id="ed-scene-type">
+              <option value="decision">Decision (default)</option>
+              <option value="through">Through</option>
+              <option value="logical">Logical</option>
+            </select>
+
+            <!-- Through-mode: "Continue to" next scene selector (hidden unless type=through) -->
+            <label class="ed-label hidden" id="ed-scene-next-label" for="ed-scene-next">Continue to</label>
+            <select class="ed-select hidden" id="ed-scene-next"></select>
+
           </div>
 
           <!-- on_enter collapsible -->
@@ -267,6 +278,18 @@
               <label class="ed-label">SFX on enter</label>
               <div id="ed-oe-gives-sfx-container" class="ed-pill-container"></div>
 
+            </div>
+          </details>
+
+          <!-- on_revisit collapsible -->
+          <details id="ed-on-revisit-details" class="ed-collapsible">
+            <summary class="ed-collapsible__header">on_revisit</summary>
+            <div class="ed-field-grid ed-collapsible__body">
+              <label class="ed-label" for="ed-revisit-text">Revisit text <span class="ed-optional">(optional)</span></label>
+              <textarea class="ed-input" id="ed-revisit-text" rows="3"
+                        placeholder="Replacement text shown when player returns to this scene."></textarea>
+              <label class="ed-label" for="ed-revisit-redirect">Redirect to <span class="ed-optional">(optional)</span></label>
+              <select class="ed-select" id="ed-revisit-redirect"></select>
             </div>
           </details>
 
