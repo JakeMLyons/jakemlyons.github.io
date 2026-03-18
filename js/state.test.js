@@ -140,5 +140,66 @@ describe('GameOutput constructor', () => {
     assert.equal(o.isTerminal, false);
     assert.equal(o.terminalReason, null);
     assert.equal(o.noChoices, false);
+    assert.equal(o.sceneType, 'decision');
+  });
+
+  it('sceneType is preserved', () => {
+    const s = new PlayerState({ sceneId: 'x' });
+    const o = new GameOutput({ state: s, sceneText: 'Go.', sceneType: 'through' });
+    assert.equal(o.sceneType, 'through');
+  });
+});
+
+// ─── obtainedItems ────────────────────────────────────────────────────────────
+
+describe('PlayerState.copy() — obtainedItems', () => {
+  it('clones obtainedItems independently', () => {
+    const s = new PlayerState({ sceneId: 'x', obtainedItems: ['sword'] });
+    const c = s.copy();
+    c.obtainedItems.push('shield');
+    assert.deepEqual(s.obtainedItems, ['sword']);
+  });
+});
+
+describe('PlayerState.toDict() / fromDict() — obtainedItems', () => {
+  it('serialises as obtained_items', () => {
+    const s = new PlayerState({ sceneId: 'x', obtainedItems: ['key', 'map'] });
+    const d = s.toDict();
+    assert.deepEqual(d.obtained_items, ['key', 'map']);
+  });
+
+  it('round-trips obtained_items', () => {
+    const s = new PlayerState({ sceneId: 'x', obtainedItems: ['key'] });
+    const s2 = PlayerState.fromDict(s.toDict());
+    assert.deepEqual(s2.obtainedItems, ['key']);
+  });
+
+  it('defaults obtainedItems to [] when absent (old saves)', () => {
+    const s = PlayerState.fromDict({ scene_id: 'x', inventory: [] });
+    assert.deepEqual(s.obtainedItems, []);
+  });
+});
+
+describe('PlayerState.fromCampaign() — obtainedItems', () => {
+  it('seeds obtainedItems from starting inventory', () => {
+    const campaign = {
+      metadata: { start: 'begin', inventory: ['torch', 'map'] },
+      attributes: {},
+      scenes: {},
+      items: {},
+    };
+    const s = PlayerState.fromCampaign(campaign);
+    assert.deepEqual(s.obtainedItems, ['torch', 'map']);
+  });
+
+  it('obtainedItems is [] when no starting inventory', () => {
+    const campaign = {
+      metadata: { start: 'begin' },
+      attributes: {},
+      scenes: {},
+      items: {},
+    };
+    const s = PlayerState.fromCampaign(campaign);
+    assert.deepEqual(s.obtainedItems, []);
   });
 });

@@ -76,3 +76,118 @@ describe('getAvailableChoices()', () => {
     assert.deepEqual(result, [CHOICE_A, CHOICE_B]);
   });
 });
+
+// ─── requires_items structured format ────────────────────────────────────────
+
+describe('getAvailableChoices() — structured requires_items', () => {
+  it('is: "owned" — passes when item in inventory', () => {
+    const choice = { label: 'X', next: 'x', requires_items: [{ item: 'torch', is: 'owned' }] };
+    assert.equal(getAvailableChoices([choice], ['torch']).length, 1);
+  });
+
+  it('is: "owned" — fails when item not in inventory', () => {
+    const choice = { label: 'X', next: 'x', requires_items: [{ item: 'torch', is: 'owned' }] };
+    assert.equal(getAvailableChoices([choice], []).length, 0);
+  });
+
+  it('is_not: "owned" — passes when item NOT in inventory', () => {
+    const choice = { label: 'X', next: 'x', requires_items: [{ item: 'torch', is_not: 'owned' }] };
+    assert.equal(getAvailableChoices([choice], []).length, 1);
+  });
+
+  it('is_not: "owned" — fails when item IS in inventory', () => {
+    const choice = { label: 'X', next: 'x', requires_items: [{ item: 'torch', is_not: 'owned' }] };
+    assert.equal(getAvailableChoices([choice], ['torch']).length, 0);
+  });
+
+  it('is: "obtained" — passes when item in obtainedItems', () => {
+    const choice = { label: 'X', next: 'x', requires_items: [{ item: 'key', is: 'obtained' }] };
+    assert.equal(getAvailableChoices([choice], [], {}, ['key']).length, 1);
+  });
+
+  it('is: "obtained" — fails when item not in obtainedItems', () => {
+    const choice = { label: 'X', next: 'x', requires_items: [{ item: 'key', is: 'obtained' }] };
+    assert.equal(getAvailableChoices([choice], [], {}, []).length, 0);
+  });
+
+  it('is_not: "obtained" — passes when item NOT in obtainedItems', () => {
+    const choice = { label: 'X', next: 'x', requires_items: [{ item: 'gem', is_not: 'obtained' }] };
+    assert.equal(getAvailableChoices([choice], [], {}, []).length, 1);
+  });
+
+  it('is_not: "obtained" — fails when item IS in obtainedItems', () => {
+    const choice = { label: 'X', next: 'x', requires_items: [{ item: 'gem', is_not: 'obtained' }] };
+    assert.equal(getAvailableChoices([choice], [], {}, ['gem']).length, 0);
+  });
+
+  it('plain string entry treated as is: "owned" (backward compat)', () => {
+    const choice = { label: 'X', next: 'x', requires_items: ['key'] };
+    assert.equal(getAvailableChoices([choice], ['key']).length, 1);
+    assert.equal(getAvailableChoices([choice], []).length, 0);
+  });
+
+  it('mixed: string and object entries in same requires_items — AND logic', () => {
+    const choice = {
+      label: 'X', next: 'x',
+      requires_items: [
+        'torch',
+        { item: 'key', is: 'obtained' },
+      ],
+    };
+    assert.equal(getAvailableChoices([choice], ['torch'], {}, ['key']).length, 1);
+    assert.equal(getAvailableChoices([choice], ['torch'], {}, []).length, 0); // obtained unmet
+    assert.equal(getAvailableChoices([choice], [], {}, ['key']).length, 0);   // owned unmet
+  });
+
+  it('obtained check passes even if item was removed from inventory', () => {
+    // inventory empty (item was removed), but obtainedItems still has it
+    const choice = { label: 'X', next: 'x', requires_items: [{ item: 'key', is: 'obtained' }] };
+    assert.equal(getAvailableChoices([choice], [], {}, ['key']).length, 1);
+  });
+});
+
+// ─── requires_attributes dict format ─────────────────────────────────────────
+
+describe('getAvailableChoices() — dict requires_attributes', () => {
+  it('single condition passes', () => {
+    const choice = { label: 'X', next: 'x', requires_attributes: { health: '>= 50' } };
+    assert.equal(getAvailableChoices([choice], [], { health: 75 }).length, 1);
+  });
+
+  it('single condition fails', () => {
+    const choice = { label: 'X', next: 'x', requires_attributes: { health: '>= 50' } };
+    assert.equal(getAvailableChoices([choice], [], { health: 30 }).length, 0);
+  });
+
+  it('"= 0" exact match passes', () => {
+    const choice = { label: 'X', next: 'x', requires_attributes: { flag: '= 0' } };
+    assert.equal(getAvailableChoices([choice], [], { flag: 0 }).length, 1);
+  });
+
+  it('"!= 5" passes when value is not 5', () => {
+    const choice = { label: 'X', next: 'x', requires_attributes: { rep: '!= 5' } };
+    assert.equal(getAvailableChoices([choice], [], { rep: 3 }).length, 1);
+    assert.equal(getAvailableChoices([choice], [], { rep: 5 }).length, 0);
+  });
+
+  it('comma-separated multi-condition — in range', () => {
+    const choice = { label: 'X', next: 'x', requires_attributes: { rep: '>= 10, <= 90' } };
+    assert.equal(getAvailableChoices([choice], [], { rep: 50 }).length, 1);
+    assert.equal(getAvailableChoices([choice], [], { rep: 9 }).length, 0);
+    assert.equal(getAvailableChoices([choice], [], { rep: 91 }).length, 0);
+  });
+
+  it('legacy array format still works alongside dict tests', () => {
+    const choice = {
+      label: 'X', next: 'x',
+      requires_attributes: [{ attr: 'health', op: '>=', value: 50 }],
+    };
+    assert.equal(getAvailableChoices([choice], [], { health: 75 }).length, 1);
+    assert.equal(getAvailableChoices([choice], [], { health: 30 }).length, 0);
+  });
+
+  it('unknown attribute defaults to 0', () => {
+    const choice = { label: 'X', next: 'x', requires_attributes: { sanity: '>= 1' } };
+    assert.equal(getAvailableChoices([choice], [], {}).length, 0);
+  });
+});

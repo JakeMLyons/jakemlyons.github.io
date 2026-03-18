@@ -266,9 +266,21 @@ function buildAttributesObj(attrs) {
 
 function buildSceneObj(s) {
   const obj = {};
-  if (s.title)     obj.title = s.title;
-  // text is always emitted (even empty string) so scenes are valid stubs
-  obj.text = s.text ?? '';
+  if (s.title) obj.title = s.title;
+
+  const sceneType = s.type ?? 'decision';
+  // Emit type field only if non-default
+  if (sceneType !== 'decision') obj.type = sceneType;
+
+  // text: always emit for decision/through; optional for logical
+  if (sceneType !== 'logical' || s.text) {
+    obj.text = s.text ?? '';
+  }
+
+  // through scenes: scene-level `next` instead of choices
+  if (sceneType === 'through' && s.next) {
+    obj.next = s.next;
+  }
 
   const sa = buildSceneAssetsObj(s.assets);
   if (sa) obj.assets = sa;
@@ -276,9 +288,18 @@ function buildSceneObj(s) {
   const oe = buildOnEnterObj(s.on_enter);
   if (oe) obj.on_enter = oe;
 
+  // on_revisit block
+  if (s.on_revisit) {
+    const rev = {};
+    if (s.on_revisit.text) rev.text = s.on_revisit.text;
+    if (s.on_revisit.redirect) rev.redirect = s.on_revisit.redirect;
+    if (Object.keys(rev).length) obj.on_revisit = rev;
+  }
+
   if (s.end) obj.end = true;
 
-  if (!s.end) {
+  // Choices: emit for decision and logical; suppress for through
+  if (!s.end && sceneType !== 'through') {
     const choices = (s.choices ?? []).map(buildChoiceObj).filter(Boolean);
     if (choices.length) obj.choices = choices;
   }
@@ -317,9 +338,12 @@ function buildChoiceObj(c) {
   const obj = {};
   if (c.label)                    obj.label          = c.label;
   if (c.next)                     obj.next           = c.next;
-  if (c.requires_item)            obj.requires_item  = c.requires_item;
-  if (c.requires_items?.length)   obj.requires_items = c.requires_items;
-  if (c.requires_attributes)      obj.requires_attributes = c.requires_attributes;
+  // Normalise requires_item (singular) into requires_items on output
+  const reqItems = buildRequiresItemsArr(c.requires_item, c.requires_items);
+  if (reqItems.length)            obj.requires_items = reqItems;
+  // requires_attributes: convert legacy array to dict format on output
+  const reqAttrs = buildRequiresAttributesObj(c.requires_attributes);
+  if (reqAttrs)                   obj.requires_attributes = reqAttrs;
   if (c.gives_items?.length)      obj.gives_items    = c.gives_items;
   if (c.removes_items?.length)    obj.removes_items  = c.removes_items;
   if (c.gives_notes?.length)      obj.gives_notes    = c.gives_notes;
@@ -328,6 +352,46 @@ function buildChoiceObj(c) {
   const sfx = serialiseGivesSfx(c.gives_sfx);
   if (sfx !== null)               obj.gives_sfx      = sfx;
   return obj;
+}
+
+/**
+ * Normalise requires_item (singular) and requires_items into a single array.
+ * Plain string entries stay as strings; structured objects are kept as-is.
+ * requires_item is merged into the array as a plain string.
+ */
+function buildRequiresItemsArr(requiresItem, requiresItems) {
+  const out = [];
+  if (requiresItem) out.push(requiresItem);
+  for (const entry of requiresItems ?? []) {
+    out.push(entry);
+  }
+  return out;
+}
+
+/**
+ * Convert requires_attributes to dict format.
+ * If already a dict, return as-is.
+ * If legacy array [{ attr, op, value }], convert to { attr: "op value", ... }.
+ * Multiple conditions on the same attribute are joined with ", ".
+ */
+function buildRequiresAttributesObj(attrConditions) {
+  if (!attrConditions) return null;
+  if (!Array.isArray(attrConditions)) {
+    // Already dict format
+    return Object.keys(attrConditions).length ? attrConditions : null;
+  }
+  // Convert legacy array to dict
+  const dict = {};
+  for (const cond of attrConditions) {
+    const key = cond.attr;
+    const part = `${cond.op} ${cond.value}`;
+    if (key in dict) {
+      dict[key] += `, ${part}`;
+    } else {
+      dict[key] = part;
+    }
+  }
+  return Object.keys(dict).length ? dict : null;
 }
 
 function serialiseGivesSfx(sfx) {
@@ -354,8 +418,18 @@ function buildAffectAttributesObj(aa) {
   if (!aa || typeof aa !== 'object') return null;
   const out = {};
   for (const [k, v] of Object.entries(aa)) {
-    const n = Number(v);
-    if (n !== 0) out[k] = n;
+    const s = String(v).trim();
+    // If it's already a string with an explicit operator, keep it
+    // Allow optional '-' before the digit to support "= -1" (set to negative)
+    if (/^[+\-=]\s*-?\d/.test(s)) {
+      // Filter out "+ 0" or "- 0" (no-op)
+      const zeroMatch = s.match(/^([+\-])\s*0(?:\.0+)?$/);
+      if (!zeroMatch) out[k] = s;
+    } else {
+      // Legacy: bare number (or FAILSAFE_SCHEMA string)
+      const n = Number(v);
+      if (n !== 0) out[k] = n;
+    }
   }
   return Object.keys(out).length ? out : null;
 }

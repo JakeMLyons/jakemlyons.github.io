@@ -16,6 +16,40 @@ import { PlayerState } from './state.js';
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
 /**
+ * Parse an affect_attributes value and compute the new attribute value.
+ *
+ * Supported formats:
+ *   "+ 5" / "+5"  → add 5        (new explicit format)
+ *   "- 3" / "-3"  → subtract 3   (new explicit format)
+ *   "= 0" / "=0"  → set to 0     (new explicit format)
+ *   5             → add 5         (legacy bare positive number)
+ *   -3            → subtract 3    (legacy bare negative number)
+ *   "5"           → add 5         (FAILSAFE_SCHEMA legacy string)
+ *   "-3"          → subtract 3    (FAILSAFE_SCHEMA legacy string)
+ *
+ * @param {number|string} raw - the YAML value (may be a number or string)
+ * @param {number} currentValue - current attribute value
+ * @returns {number}
+ */
+export function parseAffectValue(raw, currentValue) {
+  if (typeof raw === 'number') {
+    return currentValue + raw;
+  }
+  const s = String(raw).trim();
+  // Try explicit operator format: +, -, or =
+  // '=' supports negative values (e.g. "= -1" → set to -1)
+  const match = s.match(/^([+\-=])\s*(-?\d+(?:\.\d+)?)$/);
+  if (match) {
+    const n = Number(match[2]);
+    if (match[1] === '+') return currentValue + n;
+    if (match[1] === '-') return currentValue - n;
+    if (match[1] === '=') return n;
+  }
+  // Fall back to legacy: treat as a bare numeric string (FAILSAFE_SCHEMA)
+  return currentValue + Number(raw);
+}
+
+/**
  * Evaluate an attribute condition `when` string against a numeric value.
  * Format: "{operator} {number}", e.g. "<= 0", ">= 5", "= 100".
  * Valid operators: <=, >=, <, >, =, !=
@@ -59,7 +93,7 @@ function applyItemAttributeGrant(itemName, state, campaign) {
 
   for (const [attrName, delta] of Object.entries(affects)) {
     if (!(attrName in newState.attributes)) continue; // unknown attribute, skip
-    let newVal = newState.attributes[attrName] + Number(delta);
+    let newVal = parseAffectValue(delta, newState.attributes[attrName]);
     const def = attrDefs[attrName] ?? {};
     if (def.max != null) newVal = Math.min(newVal, Number(def.max));
     if (def.min != null) newVal = Math.max(newVal, Number(def.min));
@@ -72,6 +106,7 @@ function applyItemAttributeGrant(itemName, state, campaign) {
 
 /**
  * Reverse item's affect_attributes on removal. Clamps to [min, max], never kills.
+ * The '=' operator is skipped on removal (no meaningful reversal).
  * @param {string} itemName
  * @param {PlayerState} state
  * @param {object} campaign
@@ -87,7 +122,13 @@ function applyItemAttributeRemoval(itemName, state, campaign) {
 
   for (const [attrName, delta] of Object.entries(affects)) {
     if (!(attrName in newState.attributes)) continue;
-    let newVal = newState.attributes[attrName] - Number(delta); // SUBTRACT to reverse grant
+    // Detect operator; '=' entries are skipped on removal (no reversal possible)
+    const s = typeof delta === 'string' ? delta.trim() : null;
+    if (s && s.match(/^=\s*-?\d/)) continue; // '=' operator — skip on removal
+    // For '+'/'-' and legacy bare numbers: reverse by subtracting the numeric magnitude
+    // parseAffectValue(delta, 0) gives us the delta amount when applied from 0
+    const magnitude = parseAffectValue(delta, 0); // e.g. "+ 5" → 5, "- 3" → -3, 5 → 5
+    let newVal = newState.attributes[attrName] - magnitude;
     const def = attrDefs[attrName] ?? {};
     if (def.max != null) newVal = Math.min(newVal, Number(def.max));
     if (def.min != null) newVal = Math.max(newVal, Number(def.min));
@@ -128,7 +169,7 @@ export function applyAttributeEffects(data, state, campaign) {
 
   for (const [attrName, delta] of Object.entries(affects)) {
     if (!(attrName in newState.attributes)) continue; // unknown attribute, skip
-    let newVal = newState.attributes[attrName] + Number(delta);
+    let newVal = parseAffectValue(delta, newState.attributes[attrName]);
     const def = attrDefs[attrName] ?? {};
 
     // Clamp to [min, max]
@@ -167,6 +208,12 @@ export function applyItemGrants(choice, state, campaign) {
 
   let newState = state.copy();
   newState.inventory.push(...newItems);
+  // Track in obtainedItems (deduplicated)
+  for (const item of newItems) {
+    if (!newState.obtainedItems.includes(item)) {
+      newState.obtainedItems.push(item);
+    }
+  }
   const messages = [`You obtained: ${newItems.join(', ')}`];
 
   for (const itemName of newItems) {
@@ -254,6 +301,12 @@ export function applySceneEvents(scene, state, campaign) {
   const newItems = granted.filter((item) => !newState.inventory.includes(item));
   if (newItems.length > 0) {
     newState.inventory.push(...newItems);
+    // Track in obtainedItems (deduplicated)
+    for (const item of newItems) {
+      if (!newState.obtainedItems.includes(item)) {
+        newState.obtainedItems.push(item);
+      }
+    }
     messages.push(`You found: ${newItems.join(', ')}`);
     for (const itemName of newItems) {
       const result = applyItemAttributeGrant(itemName, newState, campaign);
@@ -317,6 +370,10 @@ export function applyRecipes(state, recipes, campaign) {
       const output = recipe.output;
       if (output && !next.inventory.includes(output)) {
         next.inventory.push(output);
+        // Track in obtainedItems (deduplicated)
+        if (!next.obtainedItems.includes(output)) {
+          next.obtainedItems.push(output);
+        }
         // Apply attribute effects for output item
         const result = applyItemAttributeGrant(output, next, campaign);
         next = result.newState;

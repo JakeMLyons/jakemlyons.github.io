@@ -12,6 +12,8 @@ import {
   applyNoteGrants,
   applyAttributeEffects,
   applySceneEvents,
+  applyRecipes,
+  parseAffectValue,
 } from './events.js';
 
 function makeState(overrides = {}) {
@@ -420,5 +422,92 @@ describe('applySceneEvents()', () => {
     const state = makeState();
     const { newState } = applySceneEvents(scene, state, {});
     assert.deepEqual(newState.inventory, []);
+  });
+});
+
+// ─── parseAffectValue ─────────────────────────────────────────────────────────
+
+describe('parseAffectValue()', () => {
+  it('"+ 5" adds 5', () => assert.equal(parseAffectValue('+ 5', 10), 15));
+  it('"- 3" subtracts 3', () => assert.equal(parseAffectValue('- 3', 10), 7));
+  it('"= 0" sets to 0', () => assert.equal(parseAffectValue('= 0', 10), 0));
+  it('"= 7" sets to 7 regardless of current', () => assert.equal(parseAffectValue('= 7', 99), 7));
+  it('"+5" (no space) adds', () => assert.equal(parseAffectValue('+5', 10), 15));
+  it('"-3" (no space) subtracts', () => assert.equal(parseAffectValue('-3', 10), 7));
+  it('"=0" (no space) sets', () => assert.equal(parseAffectValue('=0', 10), 0));
+  it('" + 5 " (leading/trailing spaces) adds', () => assert.equal(parseAffectValue(' + 5 ', 10), 15));
+  it('bare positive number adds (legacy)', () => assert.equal(parseAffectValue(5, 10), 15));
+  it('bare negative number subtracts (legacy)', () => assert.equal(parseAffectValue(-3, 10), 7));
+  it('"5" (FAILSAFE_SCHEMA string) adds (legacy)', () => assert.equal(parseAffectValue('5', 10), 15));
+  it('"-3" bare string subtracts (legacy)', () => assert.equal(parseAffectValue('-3', 10), 7));
+});
+
+// ─── applyAttributeEffects — string-operator format ──────────────────────────
+
+describe('applyAttributeEffects() — string operator format', () => {
+  it('"+ 5" adds correctly', () => {
+    const state = makeState({ attributes: { health: 80 } });
+    const { newState } = applyAttributeEffects(
+      { affect_attributes: { health: '+ 5' } }, state, makeCampaign()
+    );
+    assert.equal(newState.attributes.health, 85);
+  });
+
+  it('"= 0" sets value to 0', () => {
+    const state = makeState({ attributes: { health: 80 } });
+    const { newState } = applyAttributeEffects(
+      { affect_attributes: { health: '= 0' } }, state, makeCampaign()
+    );
+    assert.equal(newState.attributes.health, 0);
+  });
+
+  it('"= 50" still triggers conditions', () => {
+    const campaign = makeCampaign({ health: { value: 100, min: 0, conditions: [{ when: '<= 0', scene: 'death' }] } });
+    const state = makeState({ attributes: { health: 100 } });
+    const { triggerScene } = applyAttributeEffects(
+      { affect_attributes: { health: '= 0' } }, state, campaign
+    );
+    assert.equal(triggerScene, 'death');
+  });
+});
+
+// ─── obtainedItems tracking ───────────────────────────────────────────────────
+
+describe('applyItemGrants() — obtainedItems', () => {
+  it('adds new items to obtainedItems', () => {
+    const state = makeState();
+    const { newState } = applyItemGrants({ gives_items: ['sword', 'key'] }, state, {});
+    assert.deepEqual(newState.obtainedItems, ['sword', 'key']);
+  });
+
+  it('does not duplicate items already in obtainedItems', () => {
+    const state = makeState({ obtainedItems: ['sword'] });
+    const { newState } = applyItemGrants({ gives_items: ['sword', 'key'] }, state, {});
+    assert.deepEqual(newState.obtainedItems, ['sword', 'key']);
+  });
+
+  it('item removed from inventory stays in obtainedItems', () => {
+    const state = makeState({ inventory: ['sword'], obtainedItems: ['sword'] });
+    const { newState } = applyItemRemovals({ removes_items: ['sword'] }, state, {});
+    assert.deepEqual(newState.inventory, []);
+    assert.deepEqual(newState.obtainedItems, ['sword']);
+  });
+});
+
+describe('applySceneEvents() — obtainedItems', () => {
+  it('on_enter gives_items are tracked in obtainedItems', () => {
+    const scene = { on_enter: { gives_items: ['rune'] } };
+    const state = makeState();
+    const { newState } = applySceneEvents(scene, state, {});
+    assert.deepEqual(newState.obtainedItems, ['rune']);
+  });
+});
+
+describe('applyRecipes() — obtainedItems', () => {
+  it('recipe output is tracked in obtainedItems', () => {
+    const recipes = [{ inputs: ['blade', 'hilt'], output: 'sword' }];
+    const state = makeState({ inventory: ['blade', 'hilt'], obtainedItems: ['blade', 'hilt'] });
+    const { newState } = applyRecipes(state, recipes, {});
+    assert.ok(newState.obtainedItems.includes('sword'));
   });
 });

@@ -13,13 +13,15 @@ export class PlayerState {
    * @param {Record<string,number>} [opts.attributes]
    * @param {string[]} [opts.visited]
    * @param {string[]} [opts.notes]
+   * @param {string[]} [opts.obtainedItems]
    */
-  constructor({ sceneId, inventory = [], attributes = {}, visited = [], notes = [] }) {
+  constructor({ sceneId, inventory = [], attributes = {}, visited = [], notes = [], obtainedItems = [] }) {
     this.sceneId = sceneId;
     this.inventory = inventory;
     this.attributes = attributes; // { health: 20, carry_weight: 0, ... }
     this.visited = visited;
     this.notes = notes;
+    this.obtainedItems = obtainedItems; // all items ever granted (never removed)
   }
 
   /** Returns an independent shallow copy — all arrays and objects cloned. */
@@ -30,6 +32,7 @@ export class PlayerState {
       attributes: { ...this.attributes },
       visited: [...this.visited],
       notes: [...this.notes],
+      obtainedItems: [...this.obtainedItems],
     });
   }
 
@@ -41,13 +44,13 @@ export class PlayerState {
       attributes: { ...this.attributes },
       visited: [...this.visited],
       notes: [...this.notes],
+      obtained_items: [...this.obtainedItems],
     };
   }
 
   /**
    * Deserialises from a plain dict (e.g. loaded from a JSON save).
-   * Defaults visited and notes to [] for saves created before those fields
-   * were added, so old saves load without error.
+   * Defaults visited, notes, and obtainedItems to [] for older saves.
    * @param {object} data
    * @returns {PlayerState}
    */
@@ -58,12 +61,14 @@ export class PlayerState {
       attributes: { ...(data.attributes ?? {}) },
       visited: [...(data.visited ?? [])],
       notes: [...(data.notes ?? [])],
+      obtainedItems: [...(data.obtained_items ?? [])],
     });
   }
 
   /**
    * Builds the default starting state from campaign metadata.
    * Initialises each attribute to its declared starting value.
+   * Seeds obtainedItems from the starting inventory.
    * @param {object} campaign - { metadata, scenes, items, attributes }
    * @returns {PlayerState}
    */
@@ -74,10 +79,12 @@ export class PlayerState {
     for (const [name, def] of Object.entries(attrDefs)) {
       attributes[name] = Number(def.value ?? 0);
     }
+    const inventory = [...(meta.inventory ?? [])];
     return new PlayerState({
       sceneId: meta.start,
-      inventory: [...(meta.inventory ?? [])],
+      inventory,
       attributes,
+      obtainedItems: [...inventory],
     });
   }
 }
@@ -94,6 +101,7 @@ export class GameOutput {
    * @param {boolean} [opts.noChoices]
    * @param {object} [opts.assets] - resolved scene assets { image?: string|null, music?: string|null }
    * @param {string[]} [opts.sfx] - resolved sfx URLs to play once this turn, in order
+   * @param {'decision'|'through'|'logical'} [opts.sceneType]
    */
   constructor({
     state,
@@ -105,6 +113,7 @@ export class GameOutput {
     noChoices = false,
     assets = {},
     sfx = [],
+    sceneType = 'decision',
   }) {
     this.state = state;
     this.sceneText = sceneText;
@@ -115,5 +124,6 @@ export class GameOutput {
     this.noChoices = noChoices;
     this.assets = assets; // { image?: string|null, music?: string|null }
     this.sfx = sfx;       // string[] — resolved sfx URLs to play once this turn
+    this.sceneType = sceneType; // 'decision' | 'through' | 'logical'
   }
 }

@@ -270,16 +270,100 @@ export function validateCampaign(campaign) {
     allGrantedItems.add(item);
   }
 
+  const VALID_SCENE_TYPES = new Set(['decision', 'through', 'logical']);
+  const VALID_ATTR_OPS = new Set(['>', '>=', '<', '<=', '=', '!=']);
+  const AFFECT_VALUE_RE = /^([+\-=])\s*-?\d+(?:\.\d+)?$/;
+  const ATTR_COND_RE = /^(<=|>=|<|>|=|!=)\s*-?\d+(?:\.\d+)?$/;
+
   /**
-   * Validate affect_attributes references in a block (choice or on_enter).
+   * Validate affect_attributes references and value formats in a block.
    * @param {object} block
    * @param {string} context - description for warning messages
    */
   function checkAffectAttributes(block, context) {
     const affects = block.affect_attributes ?? {};
-    for (const attrName of Object.keys(affects)) {
+    for (const [attrName, val] of Object.entries(affects)) {
       if (!(attrName in attrDefs)) {
         warn(`${context}: 'affect_attributes' references unknown attribute '${attrName}'.`);
+      }
+      // Validate value format: bare number, FAILSAFE string, or "+/-/= N"
+      const s = String(val).trim();
+      const isLegacyNumber = !isNaN(Number(val));
+      const isOperatorFormat = AFFECT_VALUE_RE.test(s);
+      if (!isLegacyNumber && !isOperatorFormat) {
+        err(`${context}: 'affect_attributes.${attrName}' has invalid format "${val}" — expected a number or "+/-/= N" (e.g. "+ 5", "- 3", "= 0").`);
+      }
+    }
+  }
+
+  /**
+   * Validate requires_attributes (dict or legacy array).
+   */
+  function checkRequiresAttributes(attrConditions, context) {
+    if (!attrConditions) return;
+    if (Array.isArray(attrConditions)) {
+      // Legacy array format: [{ attr, op, value }]
+      for (const [ci, cond] of attrConditions.entries()) {
+        const cpfx = `${context} requires_attributes[${ci}]`;
+        if (!cond.attr) {
+          err(`${cpfx}: missing 'attr'.`);
+        } else if (attrDefs && !(cond.attr in attrDefs)) {
+          err(`${cpfx}: 'attr' references unknown attribute '${cond.attr}'.`);
+        }
+        if (!cond.op) {
+          err(`${cpfx}: missing 'op'.`);
+        } else if (!VALID_ATTR_OPS.has(cond.op)) {
+          err(`${cpfx}: 'op' must be one of >, >=, <, <=, =, != (got '${cond.op}').`);
+        }
+        if (cond.value == null || isNaN(Number(cond.value))) {
+          err(`${cpfx}: 'value' must be a number.`);
+        }
+      }
+    } else {
+      // Dict format: { attrName: ">= 18" } or { attrName: ">= 18, <= 45" }
+      for (const [attrName, condStr] of Object.entries(attrConditions)) {
+        if (attrDefs && !(attrName in attrDefs)) {
+          err(`${context} requires_attributes: unknown attribute '${attrName}'.`);
+        }
+        const parts = String(condStr).split(',');
+        for (const part of parts) {
+          if (!ATTR_COND_RE.test(part.trim())) {
+            err(`${context} requires_attributes['${attrName}']: invalid condition "${part.trim()}" — expected "{op} {number}" (e.g. ">= 18").`);
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * Validate requires_items entries (string or structured object).
+   */
+  function checkRequiresItems(requiresItems, context) {
+    const VALID_MODES = new Set(['owned', 'obtained']);
+    for (const [i, entry] of requiresItems.entries()) {
+      if (typeof entry === 'string') {
+        allItemNamesUsed.add(entry);
+        continue;
+      }
+      if (typeof entry !== 'object' || entry === null) {
+        err(`${context} requires_items[${i}]: must be a string or an object with an 'item' key.`);
+        continue;
+      }
+      if (!entry.item) {
+        err(`${context} requires_items[${i}]: missing 'item'.`);
+      } else {
+        allItemNamesUsed.add(entry.item);
+      }
+      const hasIs = 'is' in entry;
+      const hasIsNot = 'is_not' in entry;
+      if (!hasIs && !hasIsNot) {
+        err(`${context} requires_items[${i}]: must have 'is' or 'is_not'.`);
+      } else if (hasIs && hasIsNot) {
+        err(`${context} requires_items[${i}]: cannot have both 'is' and 'is_not'.`);
+      }
+      const modeVal = hasIs ? entry.is : entry.is_not;
+      if (!VALID_MODES.has(modeVal)) {
+        err(`${context} requires_items[${i}]: value must be "owned" or "obtained" (got "${modeVal}").`);
       }
     }
   }
@@ -288,9 +372,6 @@ export function validateCampaign(campaign) {
     if (typeof scene !== 'object' || scene === null) {
       err(`Scene '${sceneId}' is not a valid mapping.`);
       continue;
-    }
-    if (!scene.text) {
-      err(`Scene '${sceneId}' is missing 'text'.`);
     }
 
     // Reserved command name collision
@@ -307,60 +388,105 @@ export function validateCampaign(campaign) {
       );
     }
 
-    if (scene.end) continue; // Terminal scenes need nothing else
+    // ── Scene type validation ─────────────────────────────────────────────────
 
-    const choices = scene.choices;
-    if (!choices || choices.length === 0) {
-      err(
-        `Scene '${sceneId}' has no 'choices' and is not marked 'end: true'.`
-      );
-      continue;
+    const sceneType = scene.type ?? 'decision';
+    if (scene.type && !VALID_SCENE_TYPES.has(scene.type)) {
+      err(`Scene '${sceneId}': unknown type "${scene.type}" — must be "decision", "through", or "logical".`);
     }
 
-    for (let i = 0; i < choices.length; i++) {
-      const choice = choices[i];
-      const prefix = `Scene '${sceneId}', choice ${i + 1}`;
-      if (!choice.label) {
-        err(`${prefix}: missing 'label'.`);
+    if (sceneType === 'through') {
+      if (scene.end) {
+        err(`Scene '${sceneId}': 'end: true' is not compatible with type "through".`);
       }
-      const nextId = choice.next;
-      if (!nextId) {
-        err(`${prefix}: missing 'next'.`);
-      } else if (!(nextId in scenes)) {
-        err(`${prefix}: 'next' refers to unknown scene: '${nextId}'`);
+      if (!scene.next) {
+        err(`Scene '${sceneId}': through scene is missing 'next'.`);
+      } else if (!(scene.next in scenes)) {
+        err(`Scene '${sceneId}': through scene 'next' refers to unknown scene '${scene.next}'.`);
+      }
+      if (scene.choices && scene.choices.length > 0) {
+        warn(`Scene '${sceneId}': 'choices' on a through scene are ignored — remove them.`);
+      }
+    }
+
+    if (sceneType === 'logical') {
+      if (scene.end) {
+        err(`Scene '${sceneId}': 'end: true' is not compatible with type "logical".`);
+      }
+      if (scene.text) {
+        warn(`Scene '${sceneId}': 'text' on a logical scene is never displayed.`);
+      }
+    }
+
+    // ── on_revisit validation ─────────────────────────────────────────────────
+
+    if (scene.on_revisit) {
+      const rev = scene.on_revisit;
+      if (!rev.text && !rev.redirect) {
+        warn(`Scene '${sceneId}': 'on_revisit' has neither 'text' nor 'redirect' — it has no effect.`);
+      }
+      if (rev.redirect && !(rev.redirect in scenes)) {
+        err(`Scene '${sceneId}': 'on_revisit.redirect' refers to unknown scene '${rev.redirect}'.`);
+      }
+      if (scene.end) {
+        warn(`Scene '${sceneId}': 'on_revisit' on a terminal scene has no effect.`);
+      }
+    }
+
+    // ── text check ────────────────────────────────────────────────────────────
+
+    if (!scene.text && sceneType !== 'logical') {
+      err(`Scene '${sceneId}' is missing 'text'.`);
+    }
+
+    if (scene.end) continue; // Terminal scenes need nothing else
+
+    // ── Non-terminal, non-through scenes must have choices ────────────────────
+
+    if (sceneType !== 'through') {
+      const choices = scene.choices;
+      if (!choices || choices.length === 0) {
+        err(
+          `Scene '${sceneId}' has no 'choices' and is not marked 'end: true'.`
+        );
+        continue;
       }
 
-      checkAffectAttributes(choice, prefix);
-
-      // Validate requires_attributes conditions
-      const VALID_OPS = new Set(['>', '>=', '<', '<=', '=']);
-      for (const [ci, cond] of (choice.requires_attributes ?? []).entries()) {
-        const cpfx = `${prefix} requires_attributes[${ci}]`;
-        if (!cond.attr) {
-          err(`${cpfx}: missing 'attr'.`);
-        } else if (attrDefs && !(cond.attr in attrDefs)) {
-          err(`${cpfx}: 'attr' references unknown attribute '${cond.attr}'.`);
-        }
-        if (!cond.op) {
-          err(`${cpfx}: missing 'op'.`);
-        } else if (!VALID_OPS.has(cond.op)) {
-          err(`${cpfx}: 'op' must be one of >, >=, <, <=, = (got '${cond.op}').`);
-        }
-        if (cond.value == null || isNaN(Number(cond.value))) {
-          err(`${cpfx}: 'value' must be a number.`);
-        }
+      const isLogical = sceneType === 'logical';
+      const hasAnyFallback = (choices).some(
+        (c) => !c.requires_item && !c.requires_items?.length && !c.requires_attributes
+      );
+      if (isLogical && !hasAnyFallback) {
+        warn(`Scene '${sceneId}': all choices have requirements but there is no fallback — player may get stuck.`);
       }
 
-      // Collect item names for advisory checks
-      if (choice.requires_item) allItemNamesUsed.add(choice.requires_item);
-      for (const item of choice.requires_items ?? []) allItemNamesUsed.add(item);
-      for (const item of choice.gives_items ?? []) {
-        allItemNamesUsed.add(item);
-        allGrantedItems.add(item);
-      }
-      for (const item of choice.removes_items ?? []) {
-        allItemNamesUsed.add(item);
-        allRemovedItems.add(item);
+      for (let i = 0; i < choices.length; i++) {
+        const choice = choices[i];
+        const prefix = `Scene '${sceneId}', choice ${i + 1}`;
+        if (!isLogical && !choice.label) {
+          err(`${prefix}: missing 'label'.`);
+        }
+        const nextId = choice.next;
+        if (!nextId) {
+          err(`${prefix}: missing 'next'.`);
+        } else if (!(nextId in scenes)) {
+          err(`${prefix}: 'next' refers to unknown scene: '${nextId}'`);
+        }
+
+        checkAffectAttributes(choice, prefix);
+        checkRequiresAttributes(choice.requires_attributes, prefix);
+
+        if (choice.requires_item) allItemNamesUsed.add(choice.requires_item);
+        checkRequiresItems(choice.requires_items ?? [], prefix);
+
+        for (const item of choice.gives_items ?? []) {
+          allItemNamesUsed.add(item);
+          allGrantedItems.add(item);
+        }
+        for (const item of choice.removes_items ?? []) {
+          allItemNamesUsed.add(item);
+          allRemovedItems.add(item);
+        }
       }
     }
 
@@ -416,9 +542,15 @@ export function validateCampaign(campaign) {
       const sid = queue.pop();
       if (reachable.has(sid) || !(sid in scenes)) continue;
       reachable.add(sid);
-      for (const choice of scenes[sid].choices ?? []) {
+      const s = scenes[sid];
+      // through scene next
+      if (s.next) queue.push(s.next);
+      // choices (decision and logical)
+      for (const choice of s.choices ?? []) {
         if (choice.next) queue.push(choice.next);
       }
+      // on_revisit redirect
+      if (s.on_revisit?.redirect) queue.push(s.on_revisit.redirect);
     }
     for (const sceneId of Object.keys(scenes)) {
       if (!reachable.has(sceneId)) {
