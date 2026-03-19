@@ -13,7 +13,7 @@
 
 import { loadCampaign, validateCampaign, RESERVED_COMMAND_NAMES } from './campaign.js';
 import { serialiseCampaign } from './serialise.js';
-import { initFlowEditor, destroyFlowEditor, cancelEdgeSource, getNodePositions, focusNode } from './visual-editor.js';
+import { initFlowEditor, destroyFlowEditor, cancelEdgeSource, getNodePositions, focusNode, filterNodes, runLayout, zoom, getCy, setCompactMode, setQaMode, setLayoutParams, getLayoutParams } from './visual-editor.js';
 import { unzipToFiles } from './zip-utils.js';
 import { detectFeatures } from './campaign-utils.js';
 import {
@@ -102,6 +102,14 @@ const edSceneGraphSvg = document.getElementById('ed-scene-graph-svg');
 const edFlowPane        = document.getElementById('ed-flow-pane');
 const edFlowCy          = document.getElementById('ed-flow-cy');
 const edFlowFitBtn      = document.getElementById('ed-flow-fit');
+const edFlowZoomInBtn  = document.getElementById('ed-flow-zoom-in');
+const edFlowZoomOutBtn = document.getElementById('ed-flow-zoom-out');
+const edFlowSearch     = document.getElementById('ed-flow-search');
+const edFlowDetail      = document.getElementById('ed-flow-detail');
+const edFlowDetailId    = document.getElementById('ed-flow-detail-id');
+const edFlowDetailBody  = document.getElementById('ed-flow-detail-body');
+const edFlowDetailClose = document.getElementById('ed-flow-detail-close');
+const edFlowDetailEdit  = document.getElementById('ed-flow-detail-edit');
 const edFlowContextMenu = document.getElementById('ed-flow-context-menu');
 
 // Choice context menu (shown on right-click of an edge)
@@ -109,6 +117,19 @@ const edFlowChoiceContextMenu = document.getElementById('ed-flow-choice-context-
 
 // File tree context menu (shown on right-click of a file in code mode)
 const edFileContextMenu = document.getElementById('ed-file-context-menu');
+
+// Flow toolbar extras
+const edFlowQa    = document.getElementById('ed-flow-qa');
+const edFlowStats = document.getElementById('ed-flow-stats');
+
+// Layout settings panel
+const edFlowCompact       = document.getElementById('ed-flow-compact');
+const edSettingsRepulsion = document.getElementById('ed-settings-repulsion');
+const edSettingsEdgeLen   = document.getElementById('ed-settings-edge-length');
+const edSettingsElasticity = document.getElementById('ed-settings-elasticity');
+const edSettingsGravity   = document.getElementById('ed-settings-gravity');
+const edSettingsLayoutBtn    = document.getElementById('ed-settings-layout-btn');
+const edSettingsRandomiseBtn = document.getElementById('ed-settings-randomise-btn');
 
 // Metadata form fields
 const edMetaTitle          = document.getElementById('ed-meta-title');
@@ -681,6 +702,8 @@ function switchToCode() {
 }
 
 function activateCodeMode(selectFirst, preferScenes = false) {
+  edFlowSearch.value = '';
+  hideFlowDetailPanel();
   // Toggle sidebar
   edFiletree.classList.remove('hidden');
   edScenelist.classList.add('hidden');
@@ -720,6 +743,8 @@ function ensureFormMode() {
 }
 
 function activateFormMode() {
+  edFlowSearch.value = '';
+  hideFlowDetailPanel();
   // Toggle sidebar
   edFiletree.classList.add('hidden');
   edScenelist.classList.remove('hidden');
@@ -758,6 +783,20 @@ function activateVisualMode() {
   edModeCode.setAttribute('aria-selected', 'false');
   edModeForm.classList.remove('ed-mode-btn--active');
   edModeForm.setAttribute('aria-selected', 'false');
+
+  // Set compact mode button state before rendering (default ON if never set)
+  if (edFlowCompact) {
+    const compactPref = localStorage.getItem('editor_visual_compact');
+    if (compactPref === null || compactPref === '1') {
+      edFlowCompact.classList.add('ed-flow-connect--active');
+    } else {
+      edFlowCompact.classList.remove('ed-flow-connect--active');
+    }
+  }
+  // Enable QA by default (first entry only — subsequent entries preserve user toggle)
+  if (edFlowQa && !edFlowQa.classList.contains('ed-flow-connect--active')) {
+    edFlowQa.classList.add('ed-flow-connect--active');
+  }
 
   renderFlowEditor();
   if (activeScene) focusNode(activeScene);
@@ -3286,6 +3325,85 @@ function wireFlowPane() {
     if (mode === 'visual') renderFlowEditor(/* refit */ true);
   });
 
+  edFlowZoomInBtn.addEventListener('click',  () => { if (mode === 'visual') zoom(1.25); });
+  edFlowZoomOutBtn.addEventListener('click', () => { if (mode === 'visual') zoom(0.8); });
+
+  edFlowSearch.addEventListener('input', () => {
+    if (mode === 'visual') filterNodes(edFlowSearch.value.trim());
+  });
+  edFlowSearch.addEventListener('keydown', e => {
+    if (e.key === 'Escape') { edFlowSearch.value = ''; filterNodes(''); }
+  });
+
+  // Compact mode toggle (button now lives in the settings panel)
+  if (edFlowCompact) {
+    edFlowCompact.addEventListener('click', () => {
+      const active = edFlowCompact.classList.toggle('ed-flow-connect--active');
+      if (mode === 'visual') setCompactMode(active);
+      localStorage.setItem('editor_visual_compact', active ? '1' : '0');
+    });
+  }
+
+  // Layout param inputs — update module params on change
+  function _syncLayoutParams() {
+    setLayoutParams({
+      nodeRepulsion:   Number(edSettingsRepulsion?.value)  || 30000,
+      idealEdgeLength: Number(edSettingsEdgeLen?.value)    || 80,
+      edgeElasticity:  Number(edSettingsElasticity?.value) || 200,
+      gravity:         Number(edSettingsGravity?.value)    || 2.5,
+    });
+  }
+  [edSettingsRepulsion, edSettingsEdgeLen, edSettingsElasticity, edSettingsGravity]
+    .forEach(el => el?.addEventListener('change', _syncLayoutParams));
+
+  if (edSettingsLayoutBtn) {
+    edSettingsLayoutBtn.addEventListener('click', () => {
+      if (mode !== 'visual') return;
+      _syncLayoutParams();
+      runLayout();
+    });
+  }
+
+  if (edSettingsRandomiseBtn) {
+    edSettingsRandomiseBtn.addEventListener('click', () => {
+      if (mode !== 'visual') return;
+      const rand = (lo, hi, step) => Math.round((lo + Math.random() * (hi - lo)) / step) * step;
+      if (edSettingsRepulsion)  edSettingsRepulsion.value  = rand(5000,  80000, 1000);
+      if (edSettingsEdgeLen)    edSettingsEdgeLen.value    = rand(30,    200,   10);
+      if (edSettingsElasticity) edSettingsElasticity.value = rand(50,    500,   10);
+      if (edSettingsGravity)    edSettingsGravity.value    = rand(0.5,   10,    0.5);
+      _syncLayoutParams();
+      runLayout();
+    });
+  }
+
+  // QA mode toggle
+  if (edFlowQa) {
+    edFlowQa.addEventListener('click', () => {
+      const active = edFlowQa.classList.toggle('ed-flow-connect--active');
+      if (mode !== 'visual') return;
+      setQaMode(active);
+      const cy = getCy();
+      if (active && cy) {
+        const orphans  = cy.nodes('.qa-orphan').length;
+        const deadEnds = cy.nodes('.qa-dead-end').length;
+        edFlowQa.textContent = `QA ✕ (${orphans} orphan${orphans !== 1 ? 's' : ''}, ${deadEnds} dead end${deadEnds !== 1 ? 's' : ''})`;
+      } else {
+        edFlowQa.textContent = 'QA';
+      }
+    });
+  }
+
+  edFlowDetailClose.addEventListener('click', hideFlowDetailPanel);
+  edFlowDetailEdit.addEventListener('click', () => {
+    const id = edFlowDetail.dataset.sceneId;
+    if (!id) return;
+    hideFlowDetailPanel();
+    mode = 'form';
+    activateFormMode();
+    selectScene(id);
+  });
+
   // Context menu item dispatch
   edFlowContextMenu.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-action]');
@@ -3370,6 +3488,7 @@ function wireFlowPane() {
       hideFlowContextMenu();
       hideChoiceContextMenu();
       hideFileContextMenu();
+      hideFlowDetailPanel();
       if (mode === 'visual') cancelEdgeSource();
     }
   });
@@ -3469,6 +3588,142 @@ function hideFileContextMenu() {
   edFileContextMenu.classList.add('hidden');
 }
 
+// ─── Flow detail panel ────────────────────────────────────────────────────────
+
+function hideFlowDetailPanel() {
+  edFlowDetail.classList.add('hidden');
+  delete edFlowDetail.dataset.sceneId;
+}
+
+function showFlowDetailPanel(sceneId) {
+  if (!campaign?.scenes?.[sceneId]) return;
+  const scene = campaign.scenes[sceneId];
+  edFlowDetail.dataset.sceneId = sceneId;
+  edFlowDetailId.textContent = sceneId;
+  edFlowDetailBody.innerHTML = '';
+
+  // Scene text (up to 300 chars)
+  const raw     = scene.text ?? '';
+  const display = raw.length > 300 ? raw.slice(0, 300) + '…' : raw;
+  _appendDetailSection(edFlowDetailBody, 'Scene text', display || '(no text)', !display);
+
+  // on_enter effects
+  const oe = scene.on_enter;
+  if (oe) {
+    const effs = [];
+    if (oe.message)                   effs.push(`message: "${oe.message}"`);
+    if (oe.gives_items?.length)       effs.push(`gives: ${oe.gives_items.join(', ')}`);
+    if (oe.removes_items?.length)     effs.push(`removes: ${oe.removes_items.join(', ')}`);
+    if (oe.gives_notes?.length)       effs.push(`${oe.gives_notes.length} note(s)`);
+    const aa = oe.affect_attributes;
+    if (aa && Object.keys(aa).length) effs.push(`attrs: ${Object.keys(aa).join(', ')}`);
+    if (effs.length) _appendDetailEffects(edFlowDetailBody, 'on_enter', effs);
+  }
+
+  // Choices
+  const choices = scene.choices ?? [];
+  if (choices.length) {
+    const section = document.createElement('div');
+    section.className = 'ed-flow-detail__section';
+    const lbl = document.createElement('span');
+    lbl.className = 'ed-flow-detail__label';
+    lbl.textContent = `Choices (${choices.length})`;
+    section.appendChild(lbl);
+    const ul = document.createElement('ul');
+    ul.className = 'ed-flow-detail__choice-list';
+    choices.forEach(choice => {
+      const li = document.createElement('li');
+      li.className = 'ed-flow-detail__choice';
+      const span = document.createElement('span');
+      span.className = 'ed-flow-detail__choice-label';
+      span.textContent = choice.label || '(unlabelled)';
+      li.appendChild(span);
+      if (choice.next) {
+        const btn = document.createElement('button');
+        btn.className = 'ed-flow-detail__choice-target';
+        btn.textContent = '→ ' + choice.next;
+        btn.addEventListener('click', () => { focusNode(choice.next); showFlowDetailPanel(choice.next); });
+        li.appendChild(btn);
+      }
+      // Choice condition line
+      const conds = [];
+      if (choice.requires_item) conds.push(`needs: ${choice.requires_item}`);
+      (choice.requires_items ?? []).forEach(r => conds.push(`needs: ${r.item ?? r}`));
+      Object.entries(choice.requires_attributes ?? {}).forEach(([attr, cond]) =>
+        conds.push(`${attr} ${cond}`)
+      );
+      if (conds.length) {
+        const condEl = document.createElement('div');
+        condEl.className = 'ed-flow-detail__choice-cond';
+        condEl.textContent = conds.join(' · ');
+        li.appendChild(condEl);
+      }
+      ul.appendChild(li);
+    });
+    section.appendChild(ul);
+    edFlowDetailBody.appendChild(section);
+  } else {
+    _appendDetailSection(edFlowDetailBody, 'Choices', scene.end ? 'terminal scene' : '(none)', true);
+  }
+
+  // Incoming connections
+  const cy = getCy();
+  if (cy) {
+    const inSources = [...new Set(
+      cy.edges(`[target = "${sceneId}"]`).map(e => e.data('source'))
+    )];
+    if (inSources.length) {
+      const div = document.createElement('div');
+      div.className = 'ed-flow-detail__section';
+      const inLbl = document.createElement('span');
+      inLbl.className = 'ed-flow-detail__label';
+      inLbl.textContent = `Reached from (${inSources.length})`;
+      div.appendChild(inLbl);
+      inSources.forEach(srcId => {
+        const btn = document.createElement('button');
+        btn.className = 'ed-flow-detail__choice-target';
+        btn.textContent = `← ${srcId}`;
+        btn.addEventListener('click', () => { focusNode(srcId); showFlowDetailPanel(srcId); });
+        div.appendChild(btn);
+      });
+      edFlowDetailBody.appendChild(div);
+    }
+  }
+
+  edFlowDetail.classList.remove('hidden');
+}
+
+function _appendDetailSection(container, label, text, muted) {
+  const div = document.createElement('div');
+  div.className = 'ed-flow-detail__section';
+  const lbl = document.createElement('span');
+  lbl.className = 'ed-flow-detail__label';
+  lbl.textContent = label;
+  const p = document.createElement('p');
+  p.className = 'ed-flow-detail__text' + (muted ? ' ed-flow-detail__text--muted' : '');
+  p.textContent = text;
+  div.append(lbl, p);
+  container.appendChild(div);
+}
+
+function _appendDetailEffects(container, label, effects) {
+  const div = document.createElement('div');
+  div.className = 'ed-flow-detail__section';
+  const lbl = document.createElement('span');
+  lbl.className = 'ed-flow-detail__label';
+  lbl.textContent = label;
+  const list = document.createElement('div');
+  list.className = 'ed-flow-detail__effects';
+  effects.forEach(eff => {
+    const s = document.createElement('span');
+    s.className = 'ed-flow-detail__effect';
+    s.textContent = eff;
+    list.appendChild(s);
+  });
+  div.append(lbl, list);
+  container.appendChild(div);
+}
+
 function renderFlowEditor(refit = false) {
   if (!campaign) return;
 
@@ -3480,7 +3735,11 @@ function renderFlowEditor(refit = false) {
   }
 
   const flowCallbacks = {
+    onNodeClick(sceneId) {
+      showFlowDetailPanel(sceneId);
+    },
     onNodeDblClick(sceneId) {
+      hideFlowDetailPanel();
       mode = 'form';
       activateFormMode();
       selectScene(sceneId);
@@ -3569,11 +3828,39 @@ function renderFlowEditor(refit = false) {
     onBackgroundClick() {
       hideChoiceContextMenu();
       hideFlowContextMenu();
+      hideFlowDetailPanel();
     },
   };
 
   const savedPositions = campaign._editorMeta?.positions ?? {};
   initFlowEditor(edFlowCy, campaign, flowCallbacks, savedPositions, refit);
+
+  // Re-apply compact mode if active
+  if (edFlowCompact?.classList.contains('ed-flow-connect--active')) {
+    setCompactMode(true);
+  }
+  // Re-apply QA mode if active (nodes are rebuilt on each render)
+  if (edFlowQa) {
+    if (edFlowQa.classList.contains('ed-flow-connect--active')) {
+      setQaMode(true);
+      const qaCy = getCy();
+      if (qaCy) {
+        const orphans  = qaCy.nodes('.qa-orphan').length;
+        const deadEnds = qaCy.nodes('.qa-dead-end').length;
+        edFlowQa.textContent = `QA ✕ (${orphans} orphan${orphans !== 1 ? 's' : ''}, ${deadEnds} dead end${deadEnds !== 1 ? 's' : ''})`;
+      }
+    } else {
+      edFlowQa.textContent = 'QA';
+    }
+  }
+  // Populate stats
+  if (edFlowStats) {
+    const sceneCount = Object.keys(campaign.scenes ?? {}).length;
+    const connCount  = Object.values(campaign.scenes ?? {}).reduce(
+      (sum, s) => sum + (s.choices?.filter(c => c.next && campaign.scenes[c.next]).length ?? 0), 0
+    );
+    edFlowStats.textContent = `${sceneCount} scenes · ${connCount} connections`;
+  }
 }
 
 function promptNewSceneId() {
