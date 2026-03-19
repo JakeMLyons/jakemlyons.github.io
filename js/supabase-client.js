@@ -195,9 +195,13 @@ export async function listPublicCampaigns({ nsfw = false, page = 0, pageSize = 2
  * List all campaigns belonging to the current user (public and private).
  */
 export async function listMyCampaigns() {
+  const { data: { user }, error: authErr } = await getClient().auth.getUser();
+  if (authErr || !user) return { campaigns: [], error: authErr ?? { message: 'Not signed in.' } };
+
   const { data, error } = await getClient()
     .from('campaigns')
     .select('id, title, description, zip_url, is_public, is_nsfw, features, upvote_count, created_at, updated_at')
+    .eq('user_id', user.id)
     .order('created_at', { ascending: false });
   return { campaigns: data ?? [], error };
 }
