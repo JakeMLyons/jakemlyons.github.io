@@ -5,8 +5,14 @@
  *   initFlowEditor(container, campaign, callbacks, savedPositions, refit)
  *   destroyFlowEditor()
  *   cancelEdgeSource()            — cancel active edge draw (called on Escape)
+ *   focusNode(sceneId)            — highlight a node and pan to it
+ *   getNodePositions()            — returns { sceneId: {x,y} } map
+ *   filterNodes(term)             — dim non-matching nodes; clear with empty string
+ *   runLayout()                   — re-run force-directed (cose) layout with animation
+ *   zoom(factor)                  — zoom in/out centred on the canvas midpoint
  *
  * Callbacks (all optional):
+ *   onNodeClick(sceneId)                 — single-click node (after 220ms debounce)
  *   onNodeDblClick(sceneId)              — double-click node → open Form editor
  *   onNodeRightClick(sceneId, x, y)      — right-click node → context menu
  *   onEdgeCreated(fromId, toId)          — user completed a drag connection (new choice)
@@ -34,6 +40,14 @@ let edgeTapTimer   = null;
 let retargetInfo   = null;      // {sceneId, choiceIdx} when Ctrl+dragging an existing edge
 let ctrlDragFrom   = null;      // nodeId when Ctrl+drag on a node starts (for canvas-drop)
 let lastCyPos      = { x: 0, y: 0 }; // last known cursor position in Cytoscape model coords
+
+// User-adjustable layout parameters (shared by initial layout and the Layout button)
+let layoutParams = {
+  nodeRepulsion:  30000,
+  idealEdgeLength: 80,
+  edgeElasticity:  200,
+  gravity:         2.5,
+};
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
@@ -158,6 +172,82 @@ export function getNodePositions() {
   return out;
 }
 
+export function filterNodes(term) {
+  if (!cy) return;
+  cy.elements().removeClass('dimmed');
+  if (!term) return;
+  const lower = term.toLowerCase();
+  cy.nodes().forEach(node => {
+    const matches =
+      node.id().toLowerCase().includes(lower) ||
+      (node.data('text')  ?? '').toLowerCase().includes(lower) ||
+      (node.data('label') ?? '').toLowerCase().includes(lower);
+    if (!matches) {
+      node.addClass('dimmed');
+      node.connectedEdges().addClass('dimmed');
+    }
+  });
+  const first = cy.nodes().not('.dimmed').first();
+  if (first.nonempty())
+    cy.animate({ center: { eles: first }, zoom: cy.zoom() }, { duration: 250 });
+}
+
+export function runLayout() {
+  if (!cy) return;
+  cy.layout(buildCoseOpts(true)).run();
+}
+
+export function zoom(factor) {
+  if (!cy) return;
+  cy.zoom({
+    level: cy.zoom() * factor,
+    renderedPosition: { x: cy.width() / 2, y: cy.height() / 2 },
+  });
+}
+
+export function getCy() {
+  return cy;
+}
+
+export function setCompactMode(active) {
+  if (!cy) return;
+  cy.batch(() => {
+    if (active) {
+      cy.nodes().css({
+        'width': 16, 'height': 16,
+        'shape': 'ellipse',
+        'font-size': 9,
+        'text-valign': 'bottom',
+        'text-halign': 'center',
+        'text-margin-y': 5,
+        'text-wrap': 'none',
+        'padding': 0,
+      });
+      cy.nodes('[?isTerminal]').css({ shape: 'diamond', width: 14, height: 14 });
+      cy.nodes('[type = "through"]').css({ width: 12, height: 12 });
+    } else {
+      cy.nodes().removeStyle();
+      cy.style().update();
+    }
+  });
+}
+
+export function setQaMode(active) {
+  if (!cy) return;
+  cy.nodes().removeClass('qa-orphan qa-dead-end');
+  if (!active) return;
+  const startNode = cy.nodes('[?isStart]').first();
+  const startId = startNode.nonempty() ? startNode.id() : null;
+  cy.nodes().forEach(node => {
+    const id = node.id();
+    if (id !== startId && cy.edges(`[target = "${id}"]`).length === 0)
+      node.addClass('qa-orphan');
+    if (!node.data('isTerminal') && cy.edges(`[source = "${id}"]`).length === 0)
+      node.addClass('qa-dead-end');
+  });
+  cy.style().update();
+}
+
 // ─── Graph construction ───────────────────────────────────────────────────────
 
 function buildElements(campaign, savedPositions) {
@@ -174,15 +264,40 @@ function buildElements(campaign, savedPositions) {
       ? { x: savedPositions[id].x, y: savedPositions[id].y }
       : { x: 80 + (i % cols) * 200, y: 80 + Math.floor(i / cols) * 200 };
 
+    // Effect badges
+    const oe = scene.on_enter ?? {};
+    const hasGives   = !!(oe.gives_items?.length);
+    const hasRemoves = !!(oe.removes_items?.length);
+    const hasAffects = !!(oe.affect_attributes && Object.keys(oe.affect_attributes).length);
+    const badge = [hasGives && '⊕', hasRemoves && '⊖', hasAffects && '◈'].filter(Boolean).join('');
+    const rawLabel = scene.title || id;
+    const label = badge ? `${badge} ${rawLabel}` : rawLabel;
+
     nodes.push({
-      data: { id, label: scene.title || id, isStart: id === startId, isTerminal: !!scene.end },
+      data: {
+        id,
+        label,
+        isStart: id === startId,
+        isTerminal: !!scene.end,
+        text: scene.text ?? '',
+        type: scene.type ?? 'decision',
+        hasGives,
+        hasRemoves,
+        hasAffects,
+      },
       position: pos,
     });
 
     for (let j = 0; j < (scene.choices ?? []).length; j++) {
       const choice = scene.choices[j];
       if (!choice.next || !scenes[choice.next]) continue;
-      edges.push({ data: { id: `${id}__${j}`, source: id, target: choice.next } });
+      const hasItem = !!(choice.requires_item || choice.requires_items?.length);
+      const hasAttr = !!(choice.requires_attributes && Object.keys(choice.requires_attributes).length);
+      const conditionType = hasItem && hasAttr ? 'both'
+                          : hasItem             ? 'item'
+                          : hasAttr             ? 'attribute'
+                          :                       'none';
+      edges.push({ data: { id: `${id}__${j}`, source: id, target: choice.next, label: choice.label ?? '', conditionType } });
     }
   });
 
@@ -278,14 +393,55 @@ function buildStyle() {
       selector: '.eh-ghost-edge.eh-preview-active',
       style: { 'opacity': 0 },
     },
+    // ── Scene type differentiation ────────────────────────────────────────
+    { selector: 'node[type = "through"]',
+      style: { 'border-style': 'dashed', 'background-color': '#1a2f3f', 'border-color': '#3a6f8a' } },
+    { selector: 'node[type = "logical"]',
+      style: { shape: 'ellipse', 'background-color': '#1a1f28', 'border-color': '#2a3545', opacity: 0.7 } },
+    // ── Conditional edge styling ──────────────────────────────────────────
+    { selector: 'edge[conditionType = "item"]',
+      style: { 'line-style': 'dotted' } },
+    { selector: 'edge[conditionType = "attribute"]',
+      style: { 'line-style': 'dashed', 'line-dash-pattern': [8, 4] } },
+    { selector: 'edge[conditionType = "both"]',
+      style: { 'line-style': 'dashed', 'line-dash-pattern': [8, 3, 2, 3], 'line-color': '#a0a060', 'target-arrow-color': '#a0a060' } },
+    // ── QA overlay ────────────────────────────────────────────────────────
+    { selector: 'node.qa-orphan',   style: { 'border-color': '#e05555', 'border-width': 3 } },
+    { selector: 'node.qa-dead-end', style: { 'border-color': '#e0b030', 'border-width': 3 } },
+    // ── High-zoom edge labels ─────────────────────────────────────────────
+    { selector: 'edge.zoom-high',
+      style: { label: 'data(label)', 'font-size': 9, 'text-rotation': 'autorotate',
+               'text-margin-y': -8, color: '#8aa', 'text-max-width': '120px', 'text-wrap': 'ellipsis' } },
   ];
 }
 
 // ─── Layout ───────────────────────────────────────────────────────────────────
 
+export function setLayoutParams(p) {
+  layoutParams = { ...layoutParams, ...p };
+}
+
+export function getLayoutParams() {
+  return { ...layoutParams };
+}
+
+function buildCoseOpts(animate) {
+  return {
+    name: 'cose', randomize: true,
+    nodeRepulsion:  () => layoutParams.nodeRepulsion,
+    idealEdgeLength: () => layoutParams.idealEdgeLength,
+    edgeElasticity:  () => layoutParams.edgeElasticity,
+    nestingFactor: 1.2,
+    gravity: layoutParams.gravity,
+    numIter: 1500, coolingFactor: 0.99, minTemp: 1.0, padding: 60,
+    animate,
+    ...(animate ? { animationDuration: 400 } : {}),
+  };
+}
+
 function applyLayout(cy, savedPositions, refit) {
   if (Object.keys(savedPositions).length === 0) {
-    cy.layout({ name: 'breadthfirst', directed: true, padding: 60, spacingFactor: 1.5, animate: false }).run();
+    cy.layout(buildCoseOpts(false)).run();
   }
   if (refit || Object.keys(savedPositions).length === 0) cy.fit(cy.nodes(), 60);
 }
@@ -312,6 +468,7 @@ function wireEvents() {
     singleTapTimer = setTimeout(() => {
       singleTapTimer = null;
       highlightNode(node);
+      callbacks.onNodeClick?.(node.id());
     }, 220);
   });
 
@@ -398,6 +555,12 @@ function wireEvents() {
 
   // Track cursor position in Cytoscape model coords for canvas-drop detection
   cy.on('mousemove', e => { lastCyPos = e.position; });
+
+  // High-zoom edge labels
+  cy.on('zoom', () => {
+    if (cy.zoom() >= 2.0) cy.edges().addClass('zoom-high');
+    else cy.edges().removeClass('zoom-high');
+  });
 }
 
 function highlightNode(node) {

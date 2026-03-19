@@ -369,10 +369,104 @@
       <!-- ── Flow (Visual) pane ──────────────────────────────────────────── -->
       <div id="ed-flow-pane" class="ed-flow-pane hidden">
         <div id="ed-flow-toolbar" class="ed-flow-toolbar">
-          <button class="btn btn--ghost btn--small" id="ed-flow-fit" title="Fit all nodes in view">Fit</button>
+          <div class="ed-flow-toolbar__btn-group">
+            <button class="btn btn--ghost btn--small" id="ed-flow-zoom-in"  title="Zoom in">+</button>
+            <button class="btn btn--ghost btn--small" id="ed-flow-zoom-out" title="Zoom out">−</button>
+            <button class="btn btn--ghost btn--small" id="ed-flow-fit"      title="Fit all nodes in view">Fit</button>
+          </div>
+          <div class="ed-flow-toolbar__btn-group">
+            <button class="btn btn--ghost btn--small" id="ed-flow-qa" title="Toggle QA overlay">QA</button>
+          </div>
+          <input class="ed-input ed-flow-search" type="search" id="ed-flow-search"
+                 placeholder="find scene…" aria-label="Find scene">
           <span class="ed-flow-toolbar__hint">Ctrl+drag to connect · Double-click canvas to add scene · Right-click for options</span>
+          <span id="ed-flow-stats" class="ed-flow-stats"></span>
         </div>
-        <div id="ed-flow-cy" class="ed-flow-cy"></div>
+        <!-- Canvas area: all overlays are absolute within this wrapper -->
+        <div class="ed-flow-canvas-wrap">
+
+          <!-- Layout & display settings panel (top-left) -->
+          <div id="ed-flow-settings" class="ed-flow-settings">
+            <button class="btn btn--ghost btn--small ed-flow-settings__compact-btn" id="ed-flow-compact"
+                    title="Toggle compact node mode">Compact</button>
+            <div class="ed-flow-settings__divider"></div>
+            <div class="ed-flow-settings__params">
+              <label class="ed-flow-settings__label" for="ed-settings-repulsion">Repulsion</label>
+              <input class="ed-input ed-flow-settings__input" type="number"
+                     id="ed-settings-repulsion" value="30000" min="1000" max="200000" step="1000">
+              <label class="ed-flow-settings__label" for="ed-settings-edge-length">Edge length</label>
+              <input class="ed-input ed-flow-settings__input" type="number"
+                     id="ed-settings-edge-length" value="80" min="10" max="500" step="10">
+              <label class="ed-flow-settings__label" for="ed-settings-elasticity">Elasticity</label>
+              <input class="ed-input ed-flow-settings__input" type="number"
+                     id="ed-settings-elasticity" value="200" min="10" max="1000" step="10">
+              <label class="ed-flow-settings__label" for="ed-settings-gravity">Gravity</label>
+              <input class="ed-input ed-flow-settings__input" type="number"
+                     id="ed-settings-gravity" value="2.5" min="0.1" max="20" step="0.5">
+            </div>
+            <button class="btn btn--ghost btn--small ed-flow-settings__layout-btn"
+                    id="ed-settings-layout-btn">Re-run Layout</button>
+            <button class="btn btn--ghost btn--small ed-flow-settings__layout-btn"
+                    id="ed-settings-randomise-btn">Randomise</button>
+          </div>
+
+          <!-- Visual legend (bottom-left) -->
+          <div id="ed-flow-legend" class="ed-flow-legend">
+            <div class="ed-flow-legend__section">
+              <span class="ed-flow-legend__heading">Nodes</span>
+              <div class="ed-flow-legend__items">
+                <span class="ed-flow-legend__swatch ed-flow-legend__swatch--start"></span>
+                <span class="ed-flow-legend__item-label">Start</span>
+                <span class="ed-flow-legend__swatch ed-flow-legend__swatch--terminal"></span>
+                <span class="ed-flow-legend__item-label">Terminal</span>
+                <span class="ed-flow-legend__swatch ed-flow-legend__swatch--through"></span>
+                <span class="ed-flow-legend__item-label">Through (auto-advance)</span>
+                <span class="ed-flow-legend__swatch ed-flow-legend__swatch--logical"></span>
+                <span class="ed-flow-legend__item-label">Logical (no text)</span>
+                <span class="ed-flow-legend__swatch ed-flow-legend__swatch--default"></span>
+                <span class="ed-flow-legend__item-label">Decision (default)</span>
+              </div>
+            </div>
+            <div class="ed-flow-legend__section">
+              <span class="ed-flow-legend__heading">Edges</span>
+              <div class="ed-flow-legend__items">
+                <svg class="ed-flow-legend__line" width="30" height="12"><line x1="0" y1="6" x2="30" y2="6" stroke="#4a6375" stroke-width="2"/></svg>
+                <span class="ed-flow-legend__item-label">Free</span>
+                <svg class="ed-flow-legend__line" width="30" height="12"><line x1="0" y1="6" x2="30" y2="6" stroke="#4a6375" stroke-width="2" stroke-dasharray="3 3"/></svg>
+                <span class="ed-flow-legend__item-label">Item-gated</span>
+                <svg class="ed-flow-legend__line" width="30" height="12"><line x1="0" y1="6" x2="30" y2="6" stroke="#4a6375" stroke-width="2" stroke-dasharray="8 4"/></svg>
+                <span class="ed-flow-legend__item-label">Attribute-gated</span>
+                <svg class="ed-flow-legend__line" width="30" height="12"><line x1="0" y1="6" x2="30" y2="6" stroke="#a0a060" stroke-width="2" stroke-dasharray="8 3 2 3"/></svg>
+                <span class="ed-flow-legend__item-label">Both</span>
+              </div>
+            </div>
+            <div class="ed-flow-legend__section">
+              <span class="ed-flow-legend__heading">QA</span>
+              <div class="ed-flow-legend__items">
+                <span class="ed-flow-legend__swatch ed-flow-legend__swatch--qa-orphan"></span>
+                <span class="ed-flow-legend__item-label">Orphan (no incoming edges)</span>
+                <span class="ed-flow-legend__swatch ed-flow-legend__swatch--qa-dead-end"></span>
+                <span class="ed-flow-legend__item-label">Dead end (no choices)</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Cytoscape canvas -->
+          <div id="ed-flow-cy" class="ed-flow-cy"></div>
+
+          <!-- Scene detail overlay panel (top-right) -->
+          <div id="ed-flow-detail" class="ed-flow-detail hidden">
+            <div class="ed-flow-detail__header">
+              <span class="ed-flow-detail__id" id="ed-flow-detail-id"></span>
+              <button class="ed-flow-detail__close" id="ed-flow-detail-close" title="Close">✕</button>
+            </div>
+            <div class="ed-flow-detail__body" id="ed-flow-detail-body"></div>
+            <div class="ed-flow-detail__footer">
+              <button class="btn btn--ghost btn--small" id="ed-flow-detail-edit">Edit in Form →</button>
+            </div>
+          </div>
+
+        </div><!-- .ed-flow-canvas-wrap -->
       </div>
 
     </main>
