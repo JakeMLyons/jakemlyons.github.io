@@ -31,8 +31,8 @@
   <nav class="dash-tabs" role="tablist">
     <button class="dash-tab dash-tab--active" id="tab-my"
             role="tab" aria-selected="true" aria-controls="panel-my">My Campaigns</button>
-    <button class="dash-tab" id="tab-community"
-            role="tab" aria-selected="false" aria-controls="panel-community">Community</button>
+    <button class="dash-tab" id="tab-browse"
+            role="tab" aria-selected="false" aria-controls="panel-browse">Community</button>
     <!-- Admin tab — injected by JS when is_admin === true -->
   </nav>
 
@@ -51,27 +51,89 @@
       <!-- My Campaigns panel (default active) -->
       <div class="dash-panel" id="panel-my" role="tabpanel" aria-labelledby="tab-my">
         <div class="dash-panel__toolbar">
-          <button class="btn btn--small" id="upload-campaign-btn">+ Upload Campaign</button>
           <button class="btn btn--ghost btn--small" id="refresh-my-btn">↺ Refresh</button>
+          <button class="btn btn--small" id="upload-campaign-btn">+ Upload Campaign</button>
         </div>
         <div class="campaign-grid" id="my-grid">
           <p class="dash-empty" id="my-empty">Sign in to see your campaigns.</p>
         </div>
       </div>
 
-      <!-- Community panel (hidden by default) -->
-      <div class="dash-panel hidden" id="panel-community" role="tabpanel" aria-labelledby="tab-community">
+      <!-- Browse toolbar (shown when Browse tab is active) -->
+      <div class="dash-panel dash-panel--toolbar-only hidden" id="panel-browse-toolbar">
         <div class="dash-panel__toolbar">
+          <button class="btn btn--ghost btn--small" id="refresh-browse-btn">↺ Refresh</button>
+          <input type="search" id="search-query" class="comm-search-input comm-search-input--toolbar"
+                 placeholder="Full-text search…" autocomplete="off">
+          <button class="btn btn--small" id="execute-search-btn">↵ Search</button>
+        </div>
+      </div>
+
+      <!-- Shared filter area — shown when Browse tab is active -->
+      <div class="comm-filter-section hidden" id="comm-filter-section">
+
+        <!-- Pool controls (shown in pool mode) -->
+        <div class="comm-browse-controls" id="browse-controls">
+          <select id="browse-sort-mode" class="comm-sort-select">
+            <option value="top">Top</option>
+            <option value="hot">Hot</option>
+            <option value="new">New</option>
+          </select>
+          <select id="browse-pool-size" class="comm-sort-select">
+            <option value="50">50</option>
+            <option value="100">100</option>
+            <option value="200">200</option>
+          </select>
+        </div>
+
+        <!-- Search result sort controls (shown in search mode) -->
+        <div class="comm-browse-controls hidden" id="search-sort-controls">
+          <select id="search-sort-mode" class="comm-sort-select">
+            <option value="relevance">Relevance</option>
+            <option value="title-asc">A → Z</option>
+            <option value="title-desc">Z → A</option>
+            <option value="votes-desc">Highest rated</option>
+            <option value="votes-asc">Lowest rated</option>
+            <option value="newest">Newest</option>
+            <option value="oldest">Oldest</option>
+          </select>
+        </div>
+
+        <!-- Shared text filters -->
+        <div class="comm-search-row">
+          <input type="search" id="filter-title" class="comm-search-input"
+                 placeholder="Title…" autocomplete="off">
+          <input type="search" id="filter-author" class="comm-search-input comm-search-input--narrow"
+                 placeholder="Author…" autocomplete="off">
+        </div>
+        <div class="comm-search-row">
+          <input type="search" id="filter-desc" class="comm-search-input"
+                 placeholder="Description…" autocomplete="off">
+        </div>
+
+        <!-- Feature filter chips (populated by JS) -->
+        <div class="comm-filter-chips" id="feature-filter-chips"></div>
+
+        <!-- Active tag filter pills (populated by JS when tags are selected) -->
+        <div class="comm-active-tags" id="active-tag-chips"></div>
+
+        <!-- NSFW toggle + Clear Filters -->
+        <div class="comm-filter-bottom">
           <label class="dash-nsfw-toggle">
             <input type="checkbox" id="nsfw-toggle">
             Show NSFW
           </label>
-          <button class="btn btn--ghost btn--small" id="refresh-community-btn">↺ Refresh</button>
+          <button class="btn btn--ghost btn--small" id="clear-filters-btn">Clear Filters</button>
         </div>
-        <div class="campaign-grid" id="community-grid">
-          <p class="dash-empty" id="community-empty">Loading campaigns…</p>
+
+      </div><!-- .comm-filter-section -->
+
+      <!-- Browse panel (grid only — filter section sits above) -->
+      <div class="dash-panel dash-panel--nogap hidden" id="panel-browse"
+           role="tabpanel" aria-labelledby="tab-browse">
+        <div class="campaign-grid" id="browse-grid">
+          <p class="dash-empty">Loading campaigns…</p>
         </div>
-        <div class="dash-pagination" id="community-pagination"></div>
       </div>
 
       <!-- Admin panel (injected tab; panel always in DOM) -->

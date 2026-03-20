@@ -1150,6 +1150,63 @@ body {
   opacity: 0.8;
 }
 
+/* ── Pill input widget (shared: editor + dashboard) ──────────────────────── */
+
+.ed-pill-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3em;
+  align-items: center;
+  min-height: 2rem;
+  padding: 0.2em 0;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25em;
+  padding: 0.15em 0.5em 0.15em 0.65em;
+  background-color: var(--ta-surface-raised);
+  border: 1px solid var(--ta-border);
+  border-radius: 999px;
+  font-size: 0.82rem;
+  color: var(--ta-text);
+  white-space: nowrap;
+}
+
+.pill__remove {
+  background: none;
+  border: none;
+  color: var(--ta-text-muted);
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  font-size: 0.75rem;
+  display: flex;
+  align-items: center;
+}
+
+.pill__remove:hover {
+  color: var(--ta-danger);
+}
+
+.pill-input {
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--ta-border);
+  color: var(--ta-text);
+  font-family: var(--ta-font-ui);
+  font-size: 0.82rem;
+  padding: 0.15em 0.25em;
+  min-width: 80px;
+  max-width: 160px;
+  outline: none;
+}
+
+.pill-input:focus {
+  border-bottom-color: var(--ta-accent);
+}
+
 .sr-only {
   position: absolute;
   width: 1px;

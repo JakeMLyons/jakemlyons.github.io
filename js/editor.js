@@ -4166,6 +4166,16 @@ function refreshItemDatalist() {
   }
 }
 
+// ─── Tags normalisation ───────────────────────────────────────────────────────
+
+function normaliseTags(raw) {
+  return [...new Set(
+    (raw ?? [])
+      .map((t) => String(t).toLowerCase().trim())
+      .filter((t) => t.length > 0 && t.length <= 30),
+  )].slice(0, 10);
+}
+
 // ─── Shared widget: pill input ────────────────────────────────────────────────
 
 /**
@@ -4640,6 +4650,7 @@ async function handlePublish() {
   // FAILSAFE_SCHEMA: coerce nsfw flag explicitly
   const isNsfw      = c.metadata?.nsfw === true || c.metadata?.nsfw === 'true';
   const features    = detectFeatures(c);
+  const tags        = normaliseTags(c.metadata?.tags);
 
   // 6. Offer update choice if user has existing campaigns
   let targetId = null;
@@ -4660,7 +4671,7 @@ async function handlePublish() {
       const { error: zipErr } = await updateCampaignZip(targetId, zipBlob);
       if (zipErr) { showToast('Update failed: ' + zipErr.message); return; }
       // Metadata update is best-effort — ZIP is already committed if this fails
-      await updateCampaignMeta(targetId, { title, description, is_nsfw: isNsfw, features });
+      await updateCampaignMeta(targetId, { title, description, is_nsfw: isNsfw, features, tags });
       try { localStorage.removeItem('adventure_editor_draft'); } catch { /* silent */ }
       clearDirty();
       showToast('Campaign updated.');
@@ -4676,7 +4687,7 @@ async function handlePublish() {
   // 6b. Publish as new campaign
   edPublishBtn.textContent = 'Publishing…';
   try {
-    const { error } = await publishCampaign(zipBlob, title, description, isNsfw, features);
+    const { error } = await publishCampaign(zipBlob, title, description, isNsfw, features, tags);
     if (error) {
       showToast('Publish failed: ' + error.message);
       return;

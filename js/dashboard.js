@@ -1,15 +1,18 @@
 /**
  * dashboard.js — DOM wiring for the platform dashboard.
  *
- * Tabs: My Campaigns (default) | Community | Admin (injected when is_admin)
+ * Tabs: My Campaigns (default) | Browse | Admin (injected when is_admin)
  * Layout: resizable detail panel (left) + campaign grid (right).
  *
  * Clicking a campaign card populates the detail panel.
  * My Campaigns detail: editable metadata, Save Changes, Play, Open in Editor, Delete.
- * Community detail: read-only info, Play, Vote, Report.
+ * Browse detail: read-only info, Play, Vote, Report.
  *
- * Data is fetched lazily (first visit to each tab) and only refreshed when the
- * ↺ Refresh button is clicked — tab switches no longer trigger reloads.
+ * Browse has two data modes:
+ *   pool   — fetches a ranked pool (Top/Hot/New) from the server
+ *   search — fetches FTS results from the server via the Full-text search bar
+ * In both modes the client-side filters (title/author/desc/features/tags) narrow results.
+ * ↺ Refresh always returns to pool mode.
  *
  * Offline resilience: all Supabase calls are wrapped in try/catch.
  * XSS: all user content rendered via textContent / createTextNode only.
@@ -26,27 +29,39 @@ import {
   castVote, removeVote, getUserVotes,
   reportCampaign, listUnresolvedReports, resolveReport, adminDeleteCampaign,
   listCampaignVersions, restoreFromVersion,
+  searchCampaigns,
 } from './supabase-client.js';
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
 let currentUser    = null;
 let currentProfile = null;
-let communityPage  = 0;
-const PAGE_SIZE    = 24;
 
 let showNsfw               = false;
 let nsfwDisclaimerAccepted = false;
 
-let communityData = [];   // campaign rows from listPublicCampaigns
-let _communityLoadGen = 0; // incremented each call; stale completions are discarded
-let myData        = [];   // campaign rows from listMyCampaigns
+// Client-side filter state (applied to whatever is in browseData)
+let filterTitle    = '';
+let filterAuthor   = '';
+let filterDesc     = '';
+let filterFeatures = new Set();
+let filterTags     = new Set();
+
+// Browse state
+let browseData     = [];
+let browseMode     = 'pool';  // 'pool' | 'search'
+let browsePoolSize = parseInt(localStorage.getItem('browse_pool_size') ?? '100', 10);
+let browseSortMode = 'top';       // 'top' | 'hot' | 'new'
+let searchSortMode = 'relevance'; // sort applied to FTS results client-side
+let searchQuery    = '';
+let _browseLoadGen = 0;
+
+let myData        = [];
 let userVotes     = new Set();
 let adminLoaded   = false;
 
-// Detail panel selection
-let selectedCampaign = null;  // campaign row currently shown in detail panel
-let selectedCard     = null;  // <div class="campaign-card"> element
+let selectedCampaign = null;
+let selectedCard     = null;
 
 // Editor draft (from localStorage)
 let editorDraft = null;  // { campaign, name, files } or null
@@ -60,17 +75,32 @@ const signinBtn      = document.getElementById('signin-btn');
 const signupBtn      = document.getElementById('signup-btn');
 const signoutBtn     = document.getElementById('signout-btn');
 
-const tabMy          = document.getElementById('tab-my');
-const tabCommunity   = document.getElementById('tab-community');
-const panelMy        = document.getElementById('panel-my');
-const panelCommunity = document.getElementById('panel-community');
-const panelAdmin     = document.getElementById('panel-admin');
+const tabMy     = document.getElementById('tab-my');
+const tabBrowse = document.getElementById('tab-browse');
+const panelMy   = document.getElementById('panel-my');
+const panelBrowse = document.getElementById('panel-browse');
+const panelAdmin  = document.getElementById('panel-admin');
 
-const myGrid             = document.getElementById('my-grid');
-const communityGrid      = document.getElementById('community-grid');
-const communityPagination = document.getElementById('community-pagination');
-const nsfwToggle         = document.getElementById('nsfw-toggle');
-const uploadBtn          = document.getElementById('upload-campaign-btn');
+const myGrid     = document.getElementById('my-grid');
+const browseGrid = document.getElementById('browse-grid');
+const nsfwToggle = document.getElementById('nsfw-toggle');
+const uploadBtn  = document.getElementById('upload-campaign-btn');
+
+const commFilterSection  = document.getElementById('comm-filter-section');
+const panelBrowseToolbar = document.getElementById('panel-browse-toolbar');
+const browseControls       = document.getElementById('browse-controls');
+const searchSortControls   = document.getElementById('search-sort-controls');
+const browseSortModeSelect = document.getElementById('browse-sort-mode');
+const browsePoolSizeSelect = document.getElementById('browse-pool-size');
+const searchSortModeSelect = document.getElementById('search-sort-mode');
+const searchQueryInput   = document.getElementById('search-query');
+const executeSearchBtn   = document.getElementById('execute-search-btn');
+const filterTitleInput   = document.getElementById('filter-title');
+const filterAuthorInput  = document.getElementById('filter-author');
+const filterDescInput    = document.getElementById('filter-desc');
+const featureFilterChips = document.getElementById('feature-filter-chips');
+const activeTagChipsEl   = document.getElementById('active-tag-chips');
+const clearFiltersBtn    = document.getElementById('clear-filters-btn');
 
 const dashDetail  = document.getElementById('dash-detail');
 const dashResizer = document.getElementById('dash-resizer');
@@ -130,6 +160,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   wireNsfwToggle();
   wireRefresh();
   wireDetailResizer();
+  wireSharedFilters();
+  wireBrowseControls();
 
   // Restore saved detail panel width
   const savedWidth = localStorage.getItem('dashboard_detail_width');
@@ -181,14 +213,14 @@ async function applyAuthState(user) {
     deselectCampaign();
     loadMyCampaigns();
 
-    // Re-render community with updated vote state if already loaded
-    if (communityData.length > 0) {
+    // Re-render browse with updated vote state if already loaded
+    if (browseData.length > 0) {
       try {
-        const ids = communityData.map((c) => c.id);
+        const ids = browseData.map((c) => c.id);
         const { votes } = await getUserVotes(ids);
         userVotes = votes;
       } catch { userVotes = new Set(); }
-      renderCommunityGrid();
+      renderBrowseGrid();
     }
   } else {
     authLoggedOut.classList.remove('hidden');
@@ -198,7 +230,7 @@ async function applyAuthState(user) {
     deselectCampaign();
     renderMyGrid();
     userVotes = new Set();
-    if (communityData.length > 0) renderCommunityGrid();
+    if (browseData.length > 0) renderBrowseGrid();
   }
 }
 
@@ -206,10 +238,11 @@ async function applyAuthState(user) {
 
 function wireTabs() {
   tabMy.addEventListener('click', () => switchTab('my'));
-  tabCommunity.addEventListener('click', () => switchTab('community'));
+  tabBrowse.addEventListener('click', () => switchTab('browse'));
 }
 
 function switchTab(name) {
+  // deactivate all tabs and panels
   for (const t of document.querySelectorAll('.dash-tab')) {
     t.classList.remove('dash-tab--active');
     t.setAttribute('aria-selected', 'false');
@@ -217,25 +250,24 @@ function switchTab(name) {
   for (const p of document.querySelectorAll('.dash-panel')) {
     p.classList.add('hidden');
   }
+  commFilterSection.classList.add('hidden');
   deselectCampaign();
 
   if (name === 'my') {
-    tabMy.classList.add('dash-tab--active');
-    tabMy.setAttribute('aria-selected', 'true');
+    tabMy.classList.add('dash-tab--active'); tabMy.setAttribute('aria-selected', 'true');
     panelMy.classList.remove('hidden');
-    // Lazy load: only fetch if no data yet
     if (myData.length === 0 && currentUser) loadMyCampaigns();
-  } else if (name === 'community') {
-    tabCommunity.classList.add('dash-tab--active');
-    tabCommunity.setAttribute('aria-selected', 'true');
-    panelCommunity.classList.remove('hidden');
-    if (communityData.length === 0) loadCommunity();
+  } else if (name === 'browse') {
+    tabBrowse.classList.add('dash-tab--active'); tabBrowse.setAttribute('aria-selected', 'true');
+    panelBrowseToolbar.classList.remove('hidden');
+    commFilterSection.classList.remove('hidden');
+    browseControls.classList.toggle('hidden', browseMode === 'search');
+    searchSortControls.classList.toggle('hidden', browseMode === 'pool');
+    panelBrowse.classList.remove('hidden');
+    if (browseData.length === 0) loadBrowse();
   } else if (name === 'admin') {
     const adminTab = document.getElementById('tab-admin');
-    if (adminTab) {
-      adminTab.classList.add('dash-tab--active');
-      adminTab.setAttribute('aria-selected', 'true');
-    }
+    if (adminTab) { adminTab.classList.add('dash-tab--active'); adminTab.setAttribute('aria-selected', 'true'); }
     panelAdmin.classList.remove('hidden');
     if (!adminLoaded) loadAdminReports();
   }
@@ -262,11 +294,12 @@ function wireRefresh() {
     deselectCampaign();
     loadMyCampaigns();
   });
-  document.getElementById('refresh-community-btn').addEventListener('click', () => {
-    communityData = [];
-    communityPage = 0;
+  document.getElementById('refresh-browse-btn').addEventListener('click', () => {
+    searchQueryInput.value = '';
+    searchQuery = '';
+    browseData = [];
     deselectCampaign();
-    loadCommunity();
+    loadBrowse();
   });
   document.getElementById('refresh-admin-btn').addEventListener('click', () => {
     adminLoaded = false;
@@ -384,8 +417,8 @@ async function buildVersionHistory(c, container) {
           c.updated_at = updated_at;
           const inMy = myData.find((x) => x.id === campaignId);
           if (inMy) inMy.updated_at = updated_at;
-          const inCommunity = communityData.find((x) => x.id === campaignId);
-          if (inCommunity) inCommunity.updated_at = updated_at;
+          const inBrowse = browseData.find((x) => x.id === campaignId);
+          if (inBrowse) inBrowse.updated_at = updated_at;
         }
         showToast(`Restored to version ${v.version_num}.`);
       } catch {
@@ -452,6 +485,20 @@ function buildDetailMy(c, container) {
   descField.appendChild(descTextarea);
   body.appendChild(descField);
 
+  // Tags field
+  const tagsField = document.createElement('div');
+  tagsField.className = 'detail-field';
+  const tagsLabel = document.createElement('label');
+  tagsLabel.className = 'detail-label';
+  tagsLabel.textContent = 'Tags';
+  tagsField.appendChild(tagsLabel);
+  const tagsCtr = document.createElement('div');
+  tagsCtr.className = 'ed-pill-container';
+  let currentTags = normaliseTags(c.tags ?? []);
+  makePillInput(tagsCtr, currentTags, (items) => { currentTags = normaliseTags(items); });
+  tagsField.appendChild(tagsCtr);
+  body.appendChild(tagsField);
+
   // Toggles
   const togglesDiv = document.createElement('div');
   togglesDiv.className = 'detail-toggles';
@@ -462,7 +509,7 @@ function buildDetailMy(c, container) {
   publicCheck.type = 'checkbox';
   publicCheck.checked = c.is_public;
   publicLabel.appendChild(publicCheck);
-  publicLabel.append(' Public (visible in Community)');
+  publicLabel.append(' Public (visible in Browse)');
   togglesDiv.appendChild(publicLabel);
 
   const nsfwLabel = document.createElement('label');
@@ -504,6 +551,7 @@ function buildDetailMy(c, container) {
         description: descTextarea.value.trim() || null,
         is_public:   publicCheck.checked,
         is_nsfw:     nsfwCheck.checked,
+        tags:        currentTags,
       });
       if (error) { showDetailError(errorEl, error.message); return; }
       // Update in-memory
@@ -512,7 +560,9 @@ function buildDetailMy(c, container) {
         description: descTextarea.value.trim() || null,
         is_public:   publicCheck.checked,
         is_nsfw:     nsfwCheck.checked,
+        tags:        currentTags,
       });
+      c.tags = currentTags;
       const idx = myData.findIndex((x) => x.id === c.id);
       if (idx >= 0) myData[idx] = c;
       renderMyGrid();
@@ -522,8 +572,8 @@ function buildDetailMy(c, container) {
         selectedCard = updatedCard;
         updatedCard.classList.add('campaign-card--selected');
       }
-      // Invalidate community cache if visibility changed
-      communityData = [];
+      // Invalidate browse cache if visibility changed
+      browseData = [];
       showToast('Campaign updated.');
     } catch {
       showDetailError(errorEl, 'Could not connect to the platform.');
@@ -565,7 +615,7 @@ function buildDetailMy(c, container) {
   container.appendChild(body);
 }
 
-// ── Detail: Community ──
+// ── Detail: Community (Browse + Search) ──
 
 function buildDetailCommunity(c, container) {
   // Header
@@ -873,7 +923,7 @@ async function handleSignOut() {
   myData = [];
   renderMyGrid();
   userVotes = new Set();
-  if (communityData.length > 0) renderCommunityGrid();
+  if (browseData.length > 0) renderBrowseGrid();
   showToast('Signed out.');
 }
 
@@ -887,55 +937,189 @@ function wireNsfwToggle() {
       nsfwDisclaimerAccepted = true;
     }
     showNsfw = nsfwToggle.checked;
-    communityPage = 0;
-    communityData = [];
-    deselectCampaign();
-    loadCommunity();
+    // Reload/re-search whichever mode is active
+    if (browseMode === 'search') {
+      executeSearch();
+    } else {
+      browseData = [];
+      deselectCampaign();
+      loadBrowse();
+    }
   });
 }
 
-// ─── Community tab ────────────────────────────────────────────────────────────
+// ─── Shared filters ───────────────────────────────────────────────────────────
 
-async function loadCommunity() {
-  const gen = ++_communityLoadGen;
+function wireSharedFilters() {
+  // Feature chips
+  const FEATURE_LIST = ['⚙ attributes', '⚔ items', '⚗ recipes', '♫ assets', '✐ journal'];
+  for (const feat of FEATURE_LIST) {
+    const chip = document.createElement('button');
+    chip.className = 'comm-chip';
+    chip.type = 'button';
+    chip.textContent = feat;
+    chip.addEventListener('click', () => {
+      if (filterFeatures.has(feat)) {
+        filterFeatures.delete(feat);
+        chip.classList.remove('comm-chip--active');
+      } else {
+        filterFeatures.add(feat);
+        chip.classList.add('comm-chip--active');
+      }
+      onSharedFilterChange(); // features are always client-side
+    });
+    featureFilterChips.appendChild(chip);
+  }
 
-  communityGrid.innerHTML = '';
+  // Text inputs — client-side only
+  filterTitleInput.addEventListener('input', () => { filterTitle = filterTitleInput.value; onSharedFilterChange(); });
+  filterAuthorInput.addEventListener('input', () => { filterAuthor = filterAuthorInput.value; onSharedFilterChange(); });
+  filterDescInput.addEventListener('input', () => { filterDesc = filterDescInput.value; onSharedFilterChange(); });
+
+  clearFiltersBtn.addEventListener('click', clearAllFilters);
+}
+
+function wireBrowseControls() {
+  browseSortModeSelect.value = browseSortMode;
+  browsePoolSizeSelect.value = String(browsePoolSize);
+
+  browseSortModeSelect.addEventListener('change', () => {
+    browseSortMode = browseSortModeSelect.value;
+    searchQueryInput.value = '';
+    searchQuery = '';
+    browseData = [];
+    deselectCampaign();
+    loadBrowse();
+  });
+  browsePoolSizeSelect.addEventListener('change', () => {
+    browsePoolSize = parseInt(browsePoolSizeSelect.value, 10);
+    localStorage.setItem('browse_pool_size', String(browsePoolSize));
+    searchQueryInput.value = '';
+    searchQuery = '';
+    browseData = [];
+    deselectCampaign();
+    loadBrowse();
+  });
+
+  searchSortModeSelect.addEventListener('change', () => {
+    searchSortMode = searchSortModeSelect.value;
+    renderBrowseGrid();
+  });
+
+  // FTS search — button or Enter only; no auto-fetch
+  searchQueryInput.addEventListener('input', () => { searchQuery = searchQueryInput.value; });
+  searchQueryInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') executeSearch();
+  });
+  executeSearchBtn.addEventListener('click', () => executeSearch());
+}
+
+// Called when any client-side filter changes — re-renders the Browse grid.
+function onSharedFilterChange() {
+  renderBrowseGrid();
+}
+
+function addTagFilter(tag) {
+  filterTags.add(tag);
+  renderActiveTagChips();
+  onSharedFilterChange();
+}
+
+function removeTagFilter(tag) {
+  filterTags.delete(tag);
+  renderActiveTagChips();
+  onSharedFilterChange();
+}
+
+function renderActiveTagChips() {
+  activeTagChipsEl.innerHTML = '';
+  for (const tag of filterTags) {
+    const chip = document.createElement('span');
+    chip.className = 'comm-chip comm-chip--active comm-chip--tag';
+    chip.textContent = tag;
+    const rm = document.createElement('button');
+    rm.className = 'comm-chip__remove';
+    rm.textContent = '×';
+    rm.title = 'Remove tag filter';
+    rm.addEventListener('click', () => removeTagFilter(tag));
+    chip.appendChild(rm);
+    activeTagChipsEl.appendChild(chip);
+  }
+}
+
+function clearAllFilters() {
+  filterTitle = ''; filterTitleInput.value = '';
+  filterAuthor = ''; filterAuthorInput.value = '';
+  filterDesc = ''; filterDescInput.value = '';
+  filterFeatures.clear();
+  for (const chip of featureFilterChips.querySelectorAll('.comm-chip')) {
+    chip.classList.remove('comm-chip--active');
+  }
+  filterTags.clear();
+  renderActiveTagChips();
+  // Don't reset: browseSortMode, browsePoolSize, searchQuery, NSFW
+  onSharedFilterChange();
+}
+
+// ─── HN decay score ───────────────────────────────────────────────────────────
+
+function hnScore(c) {
+  const ageHours = (Date.now() - new Date(c.created_at).getTime()) / 3_600_000;
+  return (c.upvote_count ?? 0) / Math.pow(ageHours + 2, 1.5);
+}
+
+// ─── Browse tab ───────────────────────────────────────────────────────────────
+
+async function loadBrowse() {
+  browseMode = 'pool';
+  browseControls.classList.remove('hidden');
+  searchSortControls.classList.add('hidden');
+  const gen = ++_browseLoadGen;
+
+  browseGrid.innerHTML = '';
   const loading = document.createElement('p');
   loading.className = 'dash-empty';
   loading.textContent = 'Loading campaigns…';
-  communityGrid.appendChild(loading);
+  browseGrid.appendChild(loading);
 
   const TIMEOUT_MS = 15_000;
   try {
+    const opts = {
+      nsfw: showNsfw,
+      pageSize: browsePoolSize,
+      sortMode: browseSortMode,  // 'top' | 'hot' | 'new'
+    };
     const { campaigns, error } = await Promise.race([
-      listPublicCampaigns({ nsfw: showNsfw, page: communityPage, pageSize: PAGE_SIZE }),
+      listPublicCampaigns(opts),
       new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), TIMEOUT_MS)),
     ]);
-    if (gen !== _communityLoadGen) return; // superseded by a newer load
+    if (gen !== _browseLoadGen) return;
     if (error) throw error;
-    communityData = campaigns ?? [];
+    browseData = campaigns ?? [];
 
-    // Render immediately so campaigns appear even if vote fetch is slow/hung
+    // Hot: re-sort client-side by HN decay score
+    if (browseSortMode === 'hot') {
+      browseData.sort((a, b) => hnScore(b) - hnScore(a));
+    }
+
     userVotes = new Set();
-    renderCommunityGrid();
-    renderPagination();
+    renderBrowseGrid();
 
-    // Fetch vote state in background; re-render only if still the active load
-    if (currentUser && communityData.length > 0) {
+    if (currentUser && browseData.length > 0) {
       try {
-        const ids = communityData.map((c) => c.id);
+        const ids = browseData.map((c) => c.id);
         const { votes } = await Promise.race([
           getUserVotes(ids),
           new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), TIMEOUT_MS)),
         ]);
-        if (gen !== _communityLoadGen) return;
+        if (gen !== _browseLoadGen) return;
         userVotes = votes;
-        renderCommunityGrid();
-      } catch { /* votes stay as empty set; grid already rendered */ }
+        renderBrowseGrid();
+      } catch { /* votes stay empty */ }
     }
   } catch {
-    if (gen !== _communityLoadGen) return;
-    communityGrid.innerHTML = '';
+    if (gen !== _browseLoadGen) return;
+    browseGrid.innerHTML = '';
     const msg = document.createElement('p');
     msg.className = 'dash-empty';
     msg.textContent = 'Could not connect to the platform. ';
@@ -943,25 +1127,120 @@ async function loadCommunity() {
     link.href = 'editor.html?new';
     link.textContent = 'Open Editor';
     msg.appendChild(link);
-    communityGrid.appendChild(msg);
+    browseGrid.appendChild(msg);
   }
 }
 
-function renderCommunityGrid() {
-  communityGrid.innerHTML = '';
-  if (communityData.length === 0) {
+function getFilteredBrowseData() {
+  let data = browseData.slice();
+
+  const qTitle  = filterTitle.trim().toLowerCase();
+  const qAuthor = filterAuthor.trim().toLowerCase();
+  const qDesc   = filterDesc.trim().toLowerCase();
+
+  if (qTitle)  data = data.filter((c) => (c.title ?? '').toLowerCase().includes(qTitle));
+  if (qAuthor) data = data.filter((c) => (c.profiles?.username ?? '').toLowerCase().includes(qAuthor));
+  if (qDesc)   data = data.filter((c) => (c.description ?? '').toLowerCase().includes(qDesc));
+
+  if (filterFeatures.size > 0) {
+    data = data.filter((c) => {
+      const feats = c.features ?? [];
+      return [...filterFeatures].every((f) => feats.includes(f));
+    });
+  }
+
+  if (filterTags.size > 0) {
+    data = data.filter((c) => {
+      const tags = c.tags ?? [];
+      return [...filterTags].every((t) => tags.includes(t));
+    });
+  }
+
+  if (browseMode === 'search') {
+    switch (searchSortMode) {
+      case 'title-asc':   data.sort((a, b) => (a.title ?? '').localeCompare(b.title ?? '')); break;
+      case 'title-desc':  data.sort((a, b) => (b.title ?? '').localeCompare(a.title ?? '')); break;
+      case 'votes-desc':  data.sort((a, b) => (b.upvote_count ?? 0) - (a.upvote_count ?? 0)); break;
+      case 'votes-asc':   data.sort((a, b) => (a.upvote_count ?? 0) - (b.upvote_count ?? 0)); break;
+      case 'newest':      data.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)); break;
+      case 'oldest':      data.sort((a, b) => new Date(a.created_at) - new Date(b.created_at)); break;
+      // 'relevance': keep server order
+    }
+  }
+
+  return data;
+}
+
+function renderBrowseGrid() {
+  browseGrid.innerHTML = '';
+  const filtered = getFilteredBrowseData();
+  if (filtered.length === 0) {
     const msg = document.createElement('p');
     msg.className = 'dash-empty';
-    msg.textContent = communityPage === 0
-      ? 'No campaigns published yet. Be the first!'
-      : 'No more campaigns.';
-    communityGrid.appendChild(msg);
+    msg.textContent = browseData.length === 0
+      ? (browseMode === 'search' ? 'No results found.' : 'No campaigns published yet. Be the first!')
+      : 'No campaigns match your filters.';
+    browseGrid.appendChild(msg);
     return;
   }
-  for (const c of communityData) communityGrid.appendChild(buildCommunityCard(c));
+  for (const c of filtered) browseGrid.appendChild(buildCampaignCard(c));
 }
 
-function buildCommunityCard(c) {
+// ─── FTS search (populates browseData) ───────────────────────────────────────
+
+async function executeSearch() {
+  if (!searchQuery.trim()) {
+    // Empty query — return to pool mode
+    searchQueryInput.value = '';
+    browseData = [];
+    loadBrowse();
+    return;
+  }
+
+  browseMode = 'search';
+  searchSortMode = 'relevance';
+  searchSortModeSelect.value = 'relevance';
+  browseControls.classList.add('hidden');
+  searchSortControls.classList.remove('hidden');
+  const gen = ++_browseLoadGen;
+
+  browseGrid.innerHTML = '';
+  const loading = document.createElement('p');
+  loading.className = 'dash-empty';
+  loading.textContent = 'Searching…';
+  browseGrid.appendChild(loading);
+
+  try {
+    const { campaigns, error } = await searchCampaigns({
+      query: searchQuery.trim(),
+      nsfw:  showNsfw,
+      pageSize: browsePoolSize,
+    });
+    if (gen !== _browseLoadGen) return;
+    if (error) throw error;
+    browseData = campaigns ?? [];
+
+    userVotes = new Set();
+    renderBrowseGrid();
+
+    if (currentUser && browseData.length > 0) {
+      try {
+        const ids = browseData.map((c) => c.id);
+        const { votes } = await getUserVotes(ids);
+        if (gen !== _browseLoadGen) return;
+        userVotes = votes;
+        renderBrowseGrid();
+      } catch { /* votes stay empty */ }
+    }
+  } catch {
+    if (gen !== _browseLoadGen) return;
+    browseGrid.innerHTML = '<p class="dash-empty">Search failed. Check your connection.</p>';
+  }
+}
+
+// ─── Campaign card ────────────────────────────────────────────────────────────
+
+function buildCampaignCard(c) {
   const card = document.createElement('div');
   card.className = 'campaign-card';
   card.dataset.campaignId = c.id;
@@ -995,28 +1274,23 @@ function buildCommunityCard(c) {
   meta.className = 'campaign-card__meta';
   if (c.is_nsfw) meta.appendChild(makeBadge('NSFW', 'nsfw'));
   for (const feat of c.features ?? []) meta.appendChild(makeBadge(feat, 'feature'));
+  // Tag badges — clickable to add to filter
+  for (const tag of c.tags ?? []) {
+    const tagBadge = document.createElement('button');
+    tagBadge.className = 'campaign-card__badge campaign-card__badge--tag';
+    tagBadge.type = 'button';
+    tagBadge.textContent = tag;
+    tagBadge.title = `Filter by tag: ${tag}`;
+    tagBadge.addEventListener('click', (e) => {
+      e.stopPropagation(); // don't select the card
+      addTagFilter(tag);
+    });
+    meta.appendChild(tagBadge);
+  }
   card.appendChild(meta);
 
   card.addEventListener('click', () => selectCampaign(c, 'community', card));
   return card;
-}
-
-function renderPagination() {
-  communityPagination.innerHTML = '';
-  if (communityPage > 0) {
-    const prev = document.createElement('button');
-    prev.className = 'btn btn--ghost btn--small';
-    prev.textContent = '← Previous';
-    prev.addEventListener('click', () => { communityPage--; communityData = []; deselectCampaign(); loadCommunity(); });
-    communityPagination.appendChild(prev);
-  }
-  if (communityData.length === PAGE_SIZE) {
-    const next = document.createElement('button');
-    next.className = 'btn btn--ghost btn--small';
-    next.textContent = 'Next →';
-    next.addEventListener('click', () => { communityPage++; communityData = []; deselectCampaign(); loadCommunity(); });
-    communityPagination.appendChild(next);
-  }
 }
 
 // ─── Voting ───────────────────────────────────────────────────────────────────
@@ -1035,9 +1309,9 @@ async function handleVote(c, voteBtn, voteCountEl) {
   voteBtn.textContent = wasVoted ? '▲ Vote' : '▲ Unvote';
   voteBtn.classList.toggle('btn--voted', !wasVoted);
   if (voteCountEl) voteCountEl.textContent = '▲ ' + c.upvote_count;
-  // Update card vote count too
-  const cardEl = communityGrid.querySelector(`[data-campaign-id="${c.id}"] .vote-count`);
-  if (cardEl) cardEl.textContent = '▲ ' + c.upvote_count;
+  // Update card vote count in whichever grid is visible
+  const cardInBrowse = browseGrid.querySelector(`[data-campaign-id="${c.id}"] .vote-count`);
+  if (cardInBrowse) cardInBrowse.textContent = '▲ ' + c.upvote_count;
 
   try {
     if (wasVoted) await removeVote(c.id);
@@ -1049,7 +1323,8 @@ async function handleVote(c, voteBtn, voteCountEl) {
     voteBtn.textContent = wasVoted ? '▲ Unvote' : '▲ Vote';
     voteBtn.classList.toggle('btn--voted', wasVoted);
     if (voteCountEl) voteCountEl.textContent = '▲ ' + c.upvote_count;
-    if (cardEl) cardEl.textContent = '▲ ' + c.upvote_count;
+    if (cardInBrowse) cardInBrowse.textContent = '▲ ' + c.upvote_count;
+    if (cardInSearch) cardInSearch.textContent = '▲ ' + c.upvote_count;
     showToast('Could not connect to the platform.');
   }
 }
@@ -1293,7 +1568,7 @@ async function handleDeleteFromPanel(c) {
     myData = myData.filter((x) => x.id !== c.id);
     deselectCampaign();
     renderMyGrid();
-    communityData = [];
+    browseData = [];
   } catch {
     showToast('Could not connect to the platform.');
     if (selectedCard) selectedCard.style.opacity = '';
@@ -1478,7 +1753,7 @@ function buildReportRow(r) {
       if (error) { showToast('Error: ' + error.message); delBtn.disabled = false; return; }
       row.remove();
       showToast('Campaign deleted.');
-      communityData = [];
+      browseData = [];
     } catch {
       showToast('Could not connect to the platform.');
       delBtn.disabled = false;
@@ -1488,6 +1763,79 @@ function buildReportRow(r) {
 
   row.appendChild(actions);
   return row;
+}
+
+// ─── Tags helper ──────────────────────────────────────────────────────────────
+
+function normaliseTags(raw) {
+  return [...new Set(
+    (raw ?? [])
+      .map((t) => String(t).toLowerCase().trim())
+      .filter((t) => t.length > 0 && t.length <= 30),
+  )].slice(0, 10);
+}
+
+// ─── Pill input (for tags in detail panel) ────────────────────────────────────
+
+function makePillInput(container, initialItems, onChange, datalistIdOrOptions = null) {
+  let listId = null;
+  if (typeof datalistIdOrOptions === 'string') {
+    listId = datalistIdOrOptions;
+  } else if (Array.isArray(datalistIdOrOptions) && datalistIdOrOptions.length > 0) {
+    listId = 'pill-dl-' + Math.random().toString(36).slice(2, 8);
+    const dl = document.createElement('datalist');
+    dl.id = listId;
+    for (const opt of datalistIdOrOptions) {
+      const o = document.createElement('option');
+      o.value = opt;
+      dl.appendChild(o);
+    }
+    container.appendChild(dl);
+  }
+
+  let items = [...initialItems];
+
+  function render() {
+    const dl = container.querySelector('datalist');
+    container.innerHTML = '';
+    if (dl) container.appendChild(dl);
+    for (const item of items) {
+      const pill = document.createElement('span');
+      pill.className = 'pill';
+      pill.textContent = item;
+      const rm = document.createElement('button');
+      rm.className = 'pill__remove';
+      rm.textContent = '×';
+      rm.title = `Remove '${item}'`;
+      rm.addEventListener('click', () => { items = items.filter(i => i !== item); onChange(items); render(); });
+      pill.appendChild(rm);
+      container.appendChild(pill);
+    }
+    const input = document.createElement('input');
+    input.className = 'pill-input';
+    input.placeholder = 'Add…';
+    if (listId) input.setAttribute('list', listId);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); commit(input.value); }
+      if (e.key === 'Backspace' && input.value === '' && items.length > 0) {
+        items = items.slice(0, -1); onChange(items); render();
+        container.querySelector('.pill-input')?.focus();
+      }
+    });
+    input.addEventListener('blur', () => { if (input.value.trim()) commit(input.value); });
+    container.appendChild(input);
+  }
+
+  function commit(raw) {
+    const value = raw.trim().replace(/,+$/, '');
+    if (!value || items.includes(value)) { container.querySelector('.pill-input').value = ''; return; }
+    items = [...items, value];
+    onChange(items);
+    render();
+    container.querySelector('.pill-input')?.focus();
+  }
+
+  render();
 }
 
 // ─── Modal helpers ────────────────────────────────────────────────────────────
