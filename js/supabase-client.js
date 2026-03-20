@@ -167,15 +167,48 @@ export async function acceptPolicy() {
 // ── Campaigns ─────────────────────────────────────────────────────────────────
 
 /**
- * List all public campaigns, ordered by upvote_count descending.
- * Optionally includes NSFW campaigns.
- * @param {{ nsfw?: boolean, page?: number, pageSize?: number }} opts
+ * List public campaigns for the Browse tab.
+ * @param {{ nsfw?: boolean, page?: number, pageSize?: number, sortMode?: 'top'|'hot'|'new' }} opts
+ *   sortMode 'top' — all-time by upvote_count DESC (default)
+ *   sortMode 'hot' — last 30 days by upvote_count DESC (client re-sorts by HN score)
+ *   sortMode 'new' — by created_at DESC
  */
-export async function listPublicCampaigns({ nsfw = false, page = 0, pageSize = 24 } = {}) {
+export async function listPublicCampaigns({ nsfw = false, page = 0, pageSize = 100, sortMode = 'top' } = {}) {
   let query = getPublicClient()
     .from('campaigns')
     .select(`
-      id, title, description, zip_url, is_nsfw, features, upvote_count, created_at, updated_at,
+      id, title, description, zip_url, is_nsfw, features, tags, upvote_count, created_at, updated_at,
+      user_id,
+      profiles!campaigns_user_id_fkey ( username )
+    `)
+    .eq('is_public', true)
+    .range(page * pageSize, (page + 1) * pageSize - 1);
+
+  if (!nsfw) query = query.eq('is_nsfw', false);
+
+  if (sortMode === 'new') {
+    query = query.order('created_at', { ascending: false });
+  } else if (sortMode === 'hot') {
+    // Last 30 days; client re-sorts by HN decay score after receiving
+    const cutoff = new Date(Date.now() - 30 * 24 * 3_600_000).toISOString();
+    query = query.gte('created_at', cutoff).order('upvote_count', { ascending: false });
+  } else {
+    query = query.order('upvote_count', { ascending: false });
+  }
+
+  const { data, error } = await query;
+  return { campaigns: data ?? [], error };
+}
+
+/**
+ * Full-text + tag search across all public campaigns (Search tab).
+ * @param {{ query?: string, tags?: string[], nsfw?: boolean, page?: number, pageSize?: number }} opts
+ */
+export async function searchCampaigns({ query = '', tags = [], nsfw = false, page = 0, pageSize = 24 } = {}) {
+  let q = getPublicClient()
+    .from('campaigns')
+    .select(`
+      id, title, description, zip_url, is_nsfw, features, tags, upvote_count, created_at, updated_at,
       user_id,
       profiles!campaigns_user_id_fkey ( username )
     `)
@@ -183,11 +216,27 @@ export async function listPublicCampaigns({ nsfw = false, page = 0, pageSize = 2
     .order('upvote_count', { ascending: false })
     .range(page * pageSize, (page + 1) * pageSize - 1);
 
-  if (!nsfw) {
-    query = query.eq('is_nsfw', false);
+  if (!nsfw) q = q.eq('is_nsfw', false);
+  if (query.trim()) {
+    const trimmed = query.trim();
+    if (trimmed.length < 3) {
+      // Too short for FTS — use ILIKE on title + description
+      const safe = trimmed.replace(/%/g, '\\%').replace(/_/g, '\\_');
+      q = q.or(`title.ilike.%${safe}%,description.ilike.%${safe}%`);
+    } else {
+      // Prefix to_tsquery: each word gets :* so 'che' matches 'chef', etc.
+      const tokens = trimmed
+        .split(/\s+/)
+        .map(t => t.replace(/[^\w]/g, ''))
+        .filter(Boolean)
+        .map(t => `${t}:*`)
+        .join(' & ');
+      if (tokens) q = q.textSearch('fts_doc', tokens, { config: 'english' });
+    }
   }
+  if (tags.length > 0) q = q.contains('tags', tags);
 
-  const { data, error } = await query;
+  const { data, error } = await q;
   return { campaigns: data ?? [], error };
 }
 
@@ -200,7 +249,7 @@ export async function listMyCampaigns() {
 
   const { data, error } = await getClient()
     .from('campaigns')
-    .select('id, title, description, zip_url, is_public, is_nsfw, features, upvote_count, created_at, updated_at')
+    .select('id, title, description, zip_url, is_public, is_nsfw, features, tags, upvote_count, created_at, updated_at')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false });
   return { campaigns: data ?? [], error };
@@ -244,8 +293,9 @@ export async function getUserCampaignCount() {
  * @param {string}   description
  * @param {boolean}  isNsfw
  * @param {string[]} features
+ * @param {string[]} tags
  */
-export async function publishCampaign(zipBlob, title, description, isNsfw, features) {
+export async function publishCampaign(zipBlob, title, description, isNsfw, features, tags = []) {
   // Validate inputs
   title = (title ?? '').trim();
   if (!title || title.length > 200) {
@@ -292,6 +342,7 @@ export async function publishCampaign(zipBlob, title, description, isNsfw, featu
       is_public:   false,
       is_nsfw:     !!isNsfw,
       features:    features ?? [],
+      tags:        tags ?? [],
     })
     .select()
     .single();
@@ -311,6 +362,7 @@ export async function updateCampaign(id, updates) {
   if ('is_public'   in updates) allowed.is_public   = !!updates.is_public;
   if ('is_nsfw'     in updates) allowed.is_nsfw     = !!updates.is_nsfw;
   if ('features'    in updates) allowed.features    = updates.features ?? [];
+  if ('tags'        in updates) allowed.tags        = updates.tags ?? [];
 
   const { data, error } = await getClient()
     .from('campaigns')
