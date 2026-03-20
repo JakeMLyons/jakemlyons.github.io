@@ -1,5 +1,5 @@
 /**
- * ui.js — DOM wiring for index.html.
+ * ui.js — DOM wiring for play.html.
  *
  * All game logic lives in engine.js and its dependencies. This module only
  * calls those functions and renders GameOutput to the DOM. It never touches
