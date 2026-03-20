@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Text Adventure Engine</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script>
+    // Redirect to dashboard if this page is opened without a campaign handoff.
+    // Runs before modules load so it works even if a module import fails.
+    if (!location.search.includes('handoff') && !location.search.includes('src=')) {
+      try {
+        if (!localStorage.getItem('adventure_pending_campaign')) {
+          location.replace('dashboard.html');
+        }
+      } catch {
+        location.replace('dashboard.html');
+      }
+    }
+  </script>
+</head>
+<body>
+
+
+<!-- ── Game screen ──────────────────────────────────────────────────────── -->
+<div id="game-screen">
+
+  <!-- Header -->
+  <header class="game-header">
+    <nav class="game-header__nav">
+      <a href="dashboard.html" class="game-header__dashboard-link hidden" id="dashboard-link-game">← Dashboard</a>
+      <div class="save-feedback" id="save-feedback"></div>
+      <button class="btn btn--ghost btn--small" id="save-btn">Save</button>
+      <button class="btn btn--ghost btn--small" id="load-btn">Load</button>
+      <button class="btn btn--ghost btn--small" id="restart-btn">Restart</button>
+      <button class="btn btn--ghost btn--small" id="mute-btn">Mute</button>
+      <button class="btn btn--ghost btn--small hidden" id="music-resume-btn">&#9654; Music</button>
+      <button class="btn btn--ghost btn--small" id="help-btn">Help</button>
+    </nav>
+  </header>
+
+  <!-- Help panel (toggle) -->
+  <div class="help-panel" id="help-panel">
+    <h3>How to play</h3>
+    <ul>
+      <li><strong>Make choices</strong> — click a numbered button to advance the story.</li>
+      <li><strong>Save progress</strong> — click <em>Save</em> to store your game in this browser. Saves persist across sessions.</li>
+      <li><strong>Load a save</strong> — click <em>Load</em> to resume from a previous save, or upload a .json save file.</li>
+      <li><strong>Download save</strong> — use the <em>Download</em> button in the Load panel to back up a save as a file.</li>
+      <li><strong>Inventory</strong> — items you carry appear in the HUD. Click an item name to see its description.</li>
+      <li><strong>Journal</strong> — expand the Journal panel to read notes your character has gathered.</li>
+      <li><strong>History</strong> — expand the History panel to see all scenes you have visited.</li>
+      <li><strong>Restart</strong> — start over from the beginning (your saves are preserved).</li>
+    </ul>
+  </div>
+
+  <!-- Restart confirmation -->
+  <div class="restart-confirm" id="restart-confirm">
+    <span>Restart from the beginning? You will lose progress since your last save.</span>
+    <button class="btn btn--danger btn--small" id="restart-yes-btn">Yes, restart</button>
+    <button class="btn btn--ghost btn--small" id="restart-no-btn">Cancel</button>
+  </div>
+
+  <!-- Main content: scene + HUD -->
+  <div class="game-content">
+
+    <!-- HUD panel -->
+    <aside class="hud-panel">
+
+      <!-- Campaign title -->
+      <div class="hud-title" id="game-title">Text Adventure</div>
+
+      <!-- Inventory (collapsible, starts expanded) -->
+      <div class="hud-collapsible" id="hud-inventory-container">
+        <button class="hud-collapsible__header" id="inventory-toggle" aria-expanded="true">
+          <span class="hud-collapsible__title">Inventory</span>
+          <span class="hud-collapsible__arrow" id="inventory-arrow">▲</span>
+        </button>
+        <div class="hud-collapsible__content hud-collapsible__content--expanded" id="inventory-content">
+          <div class="hud-list-controls">
+            <button class="hud-ctrl-btn" id="inv-expand-all" title="Expand all items">expand all</button>
+            <button class="hud-ctrl-btn" id="inv-collapse-all" title="Collapse all items">collapse all</button>
+          </div>
+          <ul class="inventory-list" id="inventory-list"></ul>
+        </div>
+      </div>
+
+      <!-- Attributes (collapsible, rendered dynamically by ui.js) -->
+      <div class="hud-collapsible hidden" id="hud-attributes-container">
+        <button class="hud-collapsible__header" id="attributes-toggle" aria-expanded="true">
+          <span class="hud-collapsible__title">Attributes</span>
+          <span class="hud-collapsible__arrow" id="attributes-arrow">▲</span>
+        </button>
+        <div class="hud-collapsible__content hud-collapsible__content--expanded" id="hud-attributes">
+        </div>
+      </div>
+
+      <!-- Journal (collapsible) -->
+      <div class="hud-collapsible" id="hud-journal-container">
+        <button class="hud-collapsible__header" id="journal-toggle" aria-expanded="false">
+          <span class="hud-collapsible__title">
+            Journal
+            <span class="hud-badge" id="journal-badge">0</span>
+          </span>
+          <span class="hud-collapsible__arrow" id="journal-arrow">▼</span>
+        </button>
+        <div class="hud-collapsible__content" id="journal-content">
+          <ol class="journal-list" id="journal-list"></ol>
+        </div>
+      </div>
+
+      <!-- Map (graph — collapsible) -->
+      <div class="hud-collapsible" id="hud-map-container">
+        <button class="hud-collapsible__header" id="map-toggle" aria-expanded="false">
+          <span class="hud-collapsible__title">Map</span>
+          <span class="hud-collapsible__arrow" id="map-arrow">▼</span>
+        </button>
+        <div class="hud-collapsible__content" id="map-content">
+          <div class="map-graph" id="map-graph"></div>
+        </div>
+      </div>
+
+      <!-- History (list only — collapsible) -->
+      <div class="hud-collapsible" id="hud-history-container">
+        <button class="hud-collapsible__header" id="history-toggle" aria-expanded="false">
+          <span class="hud-collapsible__title">
+            History
+            <span class="hud-badge" id="map-badge">0</span>
+          </span>
+          <span class="hud-collapsible__arrow" id="history-arrow">▼</span>
+        </button>
+        <div class="hud-collapsible__content" id="history-content">
+          <div class="hud-list-controls">
+            <button class="hud-ctrl-btn" id="hist-expand-all">expand all</button>
+            <button class="hud-ctrl-btn" id="hist-collapse-all">collapse all</button>
+          </div>
+          <ul class="map-list" id="map-list"></ul>
+        </div>
+      </div>
+
+    </aside>
+
+    <!-- HUD resizer (drag to resize) -->
+    <div class="hud-resizer" id="hud-resizer"></div>
+
+    <!-- Scene panel -->
+    <main class="scene-panel" id="scene-panel">
+      <img id="scene-image" class="scene-image" alt="">
+      <div class="scene-panel__messages" id="scene-messages"></div>
+      <p class="scene-panel__text" id="scene-text"></p>
+      <div class="scene-panel__choices" id="scene-choices"></div>
+    </main>
+
+  </div><!-- .game-content -->
+
+</div><!-- #game-screen -->
+
+<!-- ── Load/Save modal ──────────────────────────────────────────────────── -->
+<div class="modal-overlay" id="load-modal" role="dialog" aria-modal="true" aria-labelledby="load-modal-title">
+  <div class="modal">
+    <div class="modal__header">
+      <h2 class="modal__title" id="load-modal-title">Load Save</h2>
+      <button class="modal__close" id="load-modal-close" aria-label="Close">✕</button>
+    </div>
+    <div class="modal__body" id="load-modal-body">
+      <!-- Populated by ui.js -->
+    </div>
+  </div>
+</div>
+
+<!-- ── Scene music (hidden audio element) ───────────────────────────────── -->
+<audio id="scene-music" loop></audio>
+
+<!-- ── Vendor libraries (not ES modules — must be global) ───────────────── -->
+<script src="vendor/js-yaml.min.js"></script>
+<script src="vendor/jszip.min.js"></script>
+
+<!-- ── Application modules ──────────────────────────────────────────────── -->
+<script type="module" src="js/ui.js"></script>
+
+</body>
+</html>

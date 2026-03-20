@@ -1,0 +1,140 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+    --bg:        #1a1a1a;
+    --surface:   #242424;
+    --raised:    #2e2e2e;
+    --border:    #333333;
+    --text:      #e8e8e8;
+    --muted:     #999999;
+    --accent:    #7a9fbf;
+    --accent-h:  #9bbdd9;
+    --radius:    6px;
+}
+
+body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* ── Header ── */
+header {
+    padding: 2.5rem 2rem 2rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.header-inner {
+    max-width: 860px;
+    margin: 0 auto;
+}
+
+h1 {
+    font-family: Georgia, serif;
+    font-size: 1.8rem;
+    font-weight: normal;
+    color: var(--text);
+}
+
+.tagline {
+    margin-top: 0.4rem;
+    color: var(--muted);
+    font-size: 0.95rem;
+}
+
+/* ── Main ── */
+main {
+    flex: 1;
+    padding: 2.5rem 2rem;
+}
+
+.projects {
+    max-width: 860px;
+    margin: 0 auto;
+}
+
+.section-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 1.25rem;
+}
+
+.project-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem;
+}
+
+/* ── Project card ── */
+.card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.5rem;
+    text-decoration: none;
+    color: inherit;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    transition: border-color 150ms ease, background 150ms ease;
+}
+
+.card:hover {
+    border-color: var(--accent);
+    background: var(--raised);
+}
+
+.card__title {
+    font-family: Georgia, serif;
+    font-size: 1.1rem;
+    color: var(--text);
+}
+
+.card__desc {
+    font-size: 0.88rem;
+    color: var(--muted);
+    line-height: 1.6;
+    flex: 1;
+}
+
+.card__tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.5rem;
+}
+
+.tag {
+    font-size: 0.75rem;
+    padding: 0.15rem 0.55rem;
+    border-radius: 99px;
+    background: var(--raised);
+    color: var(--muted);
+    border: 1px solid var(--border);
+}
+
+.card__arrow {
+    font-size: 0.8rem;
+    color: var(--accent);
+    margin-top: 0.75rem;
+    align-self: flex-start;
+}
+
+.card:hover .card__arrow {
+    color: var(--accent-h);
+}
+
+/* ── Footer ── */
+footer {
+    padding: 1.25rem 2rem;
+    border-top: 1px solid var(--border);
+    text-align: center;
+    font-size: 0.8rem;
+    color: var(--muted);
+}

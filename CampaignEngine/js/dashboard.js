@@ -762,7 +762,7 @@ function buildDetailDraft(draft, container) {
   playBtn.textContent = '▶ Play Draft';
   playBtn.addEventListener('click', () => {
     localStorage.setItem('adventure_pending_campaign', JSON.stringify({ campaign: c, name: draft.name }));
-    window.location.href = 'index.html';
+    window.location.href = 'play.html';
   });
   actions.appendChild(playBtn);
 
@@ -1652,7 +1652,7 @@ async function launchFromPlatform(c) {
     const files  = await unzipToFiles(await res.arrayBuffer());
     const loaded = await loadCampaign(files);
     localStorage.setItem('adventure_pending_campaign', JSON.stringify({ campaign: loaded, name: c.title }));
-    window.location.href = 'index.html';
+    window.location.href = 'play.html';
   } catch (e) {
     showToast('Could not load campaign: ' + (e.message ?? 'network error'));
   }

@@ -4,10 +4,10 @@
  * Replays fixed choice sequences through the JS engine and compares output
  * field-by-field against the Python engine (invoked via child_process).
  *
- * Run with: node html/js/test_parity.js
+ * Run with: node CampaignEngine/js/test_parity.js
  *
  * Requires: Python 3 in PATH, pyyaml installed, adventure package importable.
- * Run from the project root: node html/js/test_parity.js
+ * Run from the project root: node CampaignEngine/js/test_parity.js
  */
 
 import { execSync } from 'node:child_process';

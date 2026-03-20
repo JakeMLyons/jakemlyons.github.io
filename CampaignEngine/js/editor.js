@@ -4062,7 +4062,7 @@ async function playCampaign() {
 
   try {
     localStorage.setItem('adventure_pending_campaign', serialised);
-    window.location.href = 'index.html';
+    window.location.href = 'play.html';
   } catch { /* silent */ }
 }
 
