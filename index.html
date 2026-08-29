@@ -4,40 +4,60 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Jake Lyons</title>
-  <link rel="stylesheet" href="index.css">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:     #1a1a1a;
+      --text:   #e8e8e8;
+      --muted:  #999999;
+      --accent: #7a9fbf;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+
+    main {
+      max-width: 32rem;
+      text-align: center;
+    }
+
+    h1 {
+      font-family: Georgia, serif;
+      font-size: 2rem;
+      font-weight: normal;
+      letter-spacing: 0.01em;
+    }
+
+    p {
+      margin-top: 0.75rem;
+      color: var(--muted);
+      line-height: 1.6;
+    }
+
+    a {
+      color: var(--accent);
+      text-decoration: none;
+      border-bottom: 1px solid transparent;
+    }
+
+    a:hover, a:focus-visible { border-bottom-color: currentColor; }
+  </style>
 </head>
 <body>
 
-  <header>
-    <div class="header-inner">
-      <h1>Jake Lyons</h1>
-      <p class="tagline">Side projects &amp; experiments</p>
-    </div>
-  </header>
-
   <main>
-    <div class="projects">
-      <p class="section-label">Projects</p>
-      <div class="project-grid">
-
-        <a class="card" href="CampaignEngine/">
-          <span class="card__title">Campaign Engine</span>
-          <span class="card__desc">A browser-based text adventure engine. Write branching narratives in YAML, play them in the browser, and share campaigns with a community platform.</span>
-          <span class="card__tags">
-            <span class="tag">JavaScript</span>
-            <span class="tag">YAML</span>
-            <span class="tag">Supabase</span>
-          </span>
-          <span class="card__arrow">Open →</span>
-        </a>
-
-      </div>
-    </div>
+    <h1>Jake Lyons</h1>
+    <p>Side projects &amp; experiments. Most of it lives on <a href="https://github.com/JakeMLyons">GitHub</a>.</p>
   </main>
-
-  <footer>
-    Jake Lyons
-  </footer>
 
 </body>
 </html>
