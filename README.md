@@ -12,4 +12,4 @@ into a category directory; this one could not, so it is the one that stays
 at the top level.
 
 This site previously hosted the Campaign Engine. That moved out in August
-2026 — it lives in `TextAdventure`, which is the source of truth for it.
+2026, to a repo of its own, which is the source of truth for it.
